@@ -1287,6 +1287,7 @@ const VIEW_TYPE = "openclaw-chat";
 
 class OpenClawChatView extends ItemView {
   plugin: OpenClawPlugin;
+  private topBarEl!: HTMLElement;
   private messagesEl!: HTMLElement;
   private tabBarEl!: HTMLElement;
   private hamburgerBarEl!: HTMLElement;
@@ -1397,6 +1398,7 @@ class OpenClawChatView extends ItemView {
 
     // Top bar with tabs + profile
     const topBar = container.createDiv("openclaw-top-bar");
+    this.topBarEl = topBar;
 
     // Tab bar (browser-like tabs)
     this.tabBarEl = topBar.createDiv("openclaw-tab-bar");
@@ -2419,7 +2421,7 @@ class OpenClawChatView extends ItemView {
   }
 
   private updateTabMode(): void {
-    if (!this.tabBarEl || !this.hamburgerBarEl) return;
+    if (!this.topBarEl || !this.tabBarEl || !this.hamburgerBarEl) return;
     const containerWidth = this.containerEl.children[1]?.clientWidth || 400;
     const tabCount = this.tabSessions.length + 1; // +1 for add button
     const perTab = containerWidth / tabCount;
@@ -2427,10 +2429,12 @@ class OpenClawChatView extends ItemView {
     if (shouldBeMobile !== this.isMobileMode) {
       this.isMobileMode = shouldBeMobile;
       if (shouldBeMobile) {
+        this.topBarEl.addClass("oc-hamburger-active");
         this.tabBarEl.addClass("oc-hamburger-mode");
         this.hamburgerBarEl.addClass("oc-visible");
         this.profileBtnEl?.addClass("oc-hidden");
       } else {
+        this.topBarEl.removeClass("oc-hamburger-active");
         this.tabBarEl.removeClass("oc-hamburger-mode");
         this.hamburgerBarEl.removeClass("oc-visible");
         this.hamburgerDropdownEl2.removeClass("oc-open");

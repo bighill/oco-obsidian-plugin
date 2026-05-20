@@ -1,7 +1,7 @@
 /* ObsidianClaw — Modern Chat UI */
 
 /* ─── Utility classes (ObsidianReviewBot compliance) ─────────────── */
-.oc-hidden { display: none !important; }
+.oc-hidden { display: none; }
 .oc-flex { display: flex; }
 .oc-block { display: block; }
 .oc-inline { display: inline; }
@@ -76,17 +76,18 @@
 }
 .oc-control-panel {
   position: absolute;
-  left: 8px;
-  top: 40px;
-  bottom: 10px;
+  left: 0;
+  top: 0;
+  bottom: 0;
   z-index: 1000;
-  width: min(320px, calc(100% - 16px));
-  overflow-y: auto;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 16px;
-  box-shadow: 0 18px 60px rgba(0,0,0,0.32);
-  padding: 12px;
+  width: min(330px, 92%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background-secondary);
+  border-right: 1px solid var(--background-modifier-border);
+  box-shadow: 12px 0 36px rgba(0, 0, 0, 0.2);
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(14px + env(safe-area-inset-bottom, 0px));
 }
 .oc-control-panel-header {
   display: flex;
@@ -107,17 +108,24 @@
   font-weight: 500;
   color: var(--text-muted);
 }
-.oc-panel-ok { color: #4ade80 !important; }
-.oc-panel-warn { color: #f87171 !important; }
+.oc-panel-ok { color: #4ade80; }
+.oc-panel-warn { color: #f87171; }
 .oc-control-panel-close {
-  background: rgba(128,128,128,0.08);
-  border: 1px solid var(--background-modifier-border);
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: 8px;
+  background: transparent;
+  border: none;
   color: var(--text-muted);
   border-radius: 999px;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
+  line-height: 1;
+  font-size: 18px;
   cursor: pointer;
+  opacity: 0.55;
 }
+.oc-control-panel-close:hover { opacity: 1; background: rgba(128, 128, 128, 0.12); }
 .oc-control-card {
   border: 1px solid var(--background-modifier-border);
   background: var(--background-secondary);
@@ -162,9 +170,10 @@
 .oc-control-actions button:hover,
 .oc-control-wide-btn:hover { background: rgba(128,128,128,0.16); color: var(--text-normal); }
 .oc-agent-row {
+  border-top: 1px solid rgba(128, 128, 128, 0.08);
+  padding: 8px;
   display: flex;
   gap: 6px;
-  padding-top: 8px;
   overflow-x: auto;
 }
 .oc-agent-pill {
@@ -190,7 +199,7 @@
 /* Agent switcher button */
 .openclaw-agent-btn {
   flex-shrink: 0;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   width: 28px;
@@ -346,7 +355,7 @@
   padding: 2px 4px;
   opacity: 0.4;
 }
-.openclaw-tab-close:hover { opacity: 1 !important; background: rgba(128,128,128,0.25); }
+.openclaw-tab-close:hover { opacity: 1; background: rgba(128,128,128,0.25); }
 .openclaw-tab-meter {
   width: 100%;
   height: 3px;
@@ -366,12 +375,12 @@
 }
 .openclaw-tab-add {
   opacity: 0.35;
-  flex: 0 0 auto !important;
+  flex: 0 0 auto;
   background: transparent;
   padding: 6px 8px;
   font-size: 14px;
   border-radius: 8px 8px 0 0;
-  min-width: auto !important;
+  min-width: auto;
 }
 .openclaw-tab-add:hover { opacity: 1; background: rgba(128,128,128,0.06); }
 .openclaw-tab-add .openclaw-tab-meter { display: none; }
@@ -384,9 +393,9 @@
 
 /* Home tab: icon-only, ~40% width of a regular tab */
 .openclaw-tab-home {
-  flex: 0.4 0 0 !important;
-  max-width: 15% !important;
-  min-width: 70px !important;
+  flex: 0.4 0 0;
+  max-width: 15%;
+  min-width: 70px;
   padding: 6px 8px 0 8px;
   opacity: 0.5;
 }
@@ -411,7 +420,7 @@
 
 /* Drag reorder */
 .openclaw-tab.oc-dragging {
-  opacity: 0.4 !important;
+  opacity: 0.4;
 }
 .openclaw-tab.oc-drag-over {
   border-left: 2px solid var(--interactive-accent);
@@ -679,14 +688,14 @@
 }
 
 /* Hide desktop tab bar when hamburger is active */
-.openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) {
+.openclaw-top-bar.oc-hamburger-active {
   border-bottom: none;
   background: transparent;
 }
-.openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) > .openclaw-tab-bar {
+.openclaw-top-bar.oc-hamburger-active > .openclaw-tab-bar {
   display: none;
 }
-.openclaw-top-bar:has(.oc-hamburger-bar.oc-visible) > .oc-control-panel-btn {
+.openclaw-top-bar.oc-hamburger-active > .oc-control-panel-btn {
   display: none;
 }
 
@@ -727,7 +736,7 @@
   width: 0%;
 }
 .openclaw-context-fill.openclaw-context-mid { background: #d4a843; }
-.openclaw-context-fill.openclaw-context-high { background: #c44; }
+.openclaw-context-fill.openclaw-context-high { background: #cc4444; }
 .openclaw-context-label {
   font-size: 9px;
   color: var(--text-faint);
@@ -1131,7 +1140,7 @@
 .openclaw-reconnect-btn {
   background: none;
   border: none;
-  color: var(--text-error, #e34);
+  color: var(--text-error, #ee3344);
   cursor: pointer;
   padding: 6px;
   border-radius: 50%;
@@ -1945,7 +1954,7 @@
   transition: width 0.3s;
 }
 .openclaw-picker-fill.mid { background: #d4a843; }
-.openclaw-picker-fill.high { background: #c44; }
+.openclaw-picker-fill.high { background: #cc4444; }
 
 /* Delete button */
 .openclaw-picker-del {
@@ -1960,7 +1969,7 @@
   line-height: 1;
 }
 .openclaw-picker-del:hover {
-  color: #c44;
+  color: #cc4444;
   background: rgba(204,68,68,0.1);
 }
 
@@ -2128,42 +2137,12 @@
   to { transform: rotate(360deg); }
 }
 
-/* ─── ClawTabs-style compact dashboard panel ───────────────────── */
-.openclaw-agent-btn { display: none !important; }
-
-.oc-control-panel {
-  width: min(260px, calc(100% - 18px)) !important;
-  left: 8px !important;
-  top: 8px !important;
-  bottom: 8px !important;
-  padding: 10px !important;
-  background: var(--background-secondary) !important;
-  border: 1px solid var(--background-modifier-border) !important;
-  border-radius: 0 12px 12px 0 !important;
-  box-shadow: 12px 0 32px rgba(0,0,0,0.22) !important;
-  font-family: var(--font-interface);
-}
-.oc-control-panel-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.55;
-}
-.oc-control-panel-close:hover { opacity: 1; background: rgba(128,128,128,0.12); }
+/* ─── ClawTabs-style panel content ───────────────────────────── */
 .oc-hud-agent-card {
-  background: rgba(128,128,128,0.04);
-  border: 1px solid rgba(128,128,128,0.10);
-  border-radius: 8px;
-  margin: 0 0 10px;
+  background: rgba(128, 128, 128, 0.04);
+  border: 1px solid rgba(128, 128, 128, 0.1);
+  margin: 2px 4px 10px;
+  border-radius: 10px;
   overflow: hidden;
 }
 .oc-hud-identity {
@@ -2179,7 +2158,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(128,128,128,0.12);
+  background: rgba(128, 128, 128, 0.12);
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -2202,56 +2181,63 @@
 }
 .oc-hud-status-line.online { color: #4ade80; }
 .oc-hud-group-label {
-  font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--text-faint);
   text-transform: uppercase;
-  padding: 14px 10px 5px;
+  font-size: 11px;
+  margin: 2px 6px 6px;
+  padding: 0;
 }
 .oc-hud-section {
-  padding: 0 4px;
-  margin: 0 0 2px;
+  margin: 0 4px;
+  border: 1px solid rgba(128, 128, 128, 0.14);
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.04);
+  overflow: hidden;
 }
 .oc-hud-section-toggle {
   width: 100%;
-  min-height: 38px;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 8px;
   border: none;
-  border-radius: 7px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   text-align: left;
   font-family: var(--font-interface);
+  border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+  min-height: 44px;
 }
 .oc-hud-section-toggle:disabled {
   cursor: default;
   opacity: 1;
 }
 .oc-hud-section-toggle:not(:disabled):hover {
-  background: rgba(128,128,128,0.10);
+  background: rgba(128, 128, 128, 0.1);
   color: var(--text-normal);
 }
+.oc-hud-section-toggle:last-child { border-bottom: none; }
 .oc-hud-section-label {
-  font-size: 14px;
-  font-weight: 400;
   color: var(--text-muted);
   flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 .oc-hud-section-toggle:not(:disabled):hover .oc-hud-section-label { color: var(--text-normal); }
 .oc-hud-section-value {
   flex: 1;
   min-width: 0;
   text-align: right;
-  font-size: 12px;
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 12px;
 }
 .oc-hud-section-chevron {
   color: var(--text-faint);
@@ -2260,58 +2246,6 @@
   flex: 0 0 auto;
 }
 .oc-hud-section-toggle:disabled .oc-hud-section-chevron { visibility: hidden; }
-.oc-agent-row {
-  border-top: 1px solid rgba(128,128,128,0.08);
-  padding: 8px;
-}
-
-/* ─── ClawTabs closer panel pass (v2) ───────────────────────────── */
-.oc-control-panel {
-  left: 0 !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  width: min(330px, 92%) !important;
-  border-radius: 0 !important;
-  border-left: none !important;
-  border-top: none !important;
-  border-bottom: none !important;
-  border-right: 1px solid var(--background-modifier-border) !important;
-  box-shadow: 12px 0 36px rgba(0,0,0,0.2) !important;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(14px + env(safe-area-inset-bottom, 0px)) !important;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden !important;
-}
-.oc-hud-agent-card {
-  margin: 2px 4px 10px;
-  border-radius: 10px;
-}
-.oc-hud-group-label {
-  margin: 2px 6px 6px;
-  padding: 0;
-  font-size: 11px;
-}
-.oc-hud-section {
-  margin: 0 4px;
-  border: 1px solid rgba(128,128,128,0.14);
-  border-radius: 10px;
-  background: rgba(128,128,128,0.04);
-  overflow: hidden;
-}
-.oc-hud-section-toggle {
-  border-radius: 0 !important;
-  border-bottom: 1px solid rgba(128,128,128,0.12);
-  min-height: 44px;
-}
-.oc-hud-section-toggle:last-child { border-bottom: none; }
-.oc-hud-section-label {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-.oc-hud-section-value {
-  font-size: 12px;
-}
 .oc-hud-footer {
   margin-top: auto;
   padding: 10px 8px 0;
@@ -2322,28 +2256,28 @@
   display: inline-flex;
   font-size: 12px;
   color: var(--text-muted);
-  border: 1px solid rgba(128,128,128,0.18);
+  border: 1px solid rgba(128, 128, 128, 0.18);
   border-radius: 999px;
   padding: 4px 10px;
   letter-spacing: 0.02em;
 }
 [data-theme="light"] .oc-control-panel,
 .theme-light .oc-control-panel {
-  background: #f2f2f3 !important;
-  border-right-color: #d8d8dc !important;
-  box-shadow: none !important;
+  background: #f2f2f3;
+  border-right-color: #d8d8dc;
+  box-shadow: none;
 }
 [data-theme="light"] .oc-hud-agent-card,
 .theme-light .oc-hud-agent-card {
-  background: #efefef !important;
-  border-color: #d5d5d8 !important;
+  background: #efefef;
+  border-color: #d5d5d8;
 }
 [data-theme="light"] .oc-hud-section,
 .theme-light .oc-hud-section {
-  background: #f0f0f1 !important;
-  border-color: #d6d6da !important;
+  background: #f0f0f1;
+  border-color: #d6d6da;
 }
 [data-theme="light"] .oc-hud-section-toggle,
 .theme-light .oc-hud-section-toggle {
-  border-bottom-color: #d9d9dc !important;
+  border-bottom-color: #d9d9dc;
 }

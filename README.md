@@ -1,4 +1,4 @@
-# ObsidianClaw
+# OpenClaw
 
 **Chat with your [OpenClaw](https://openclaw.ai) AI agent directly from Obsidian.**
 
