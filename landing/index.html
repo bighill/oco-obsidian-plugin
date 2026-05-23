@@ -102,54 +102,6 @@
     .security-card p{font-size:13px;color:var(--text-dim);line-height:1.7}
     .security-card strong{color:var(--text-bright)}
 
-    /* Modal */
-    .modal-overlay{
-      position:fixed;top:0;left:0;right:0;bottom:0;
-      background:rgba(0,0,0,.7);backdrop-filter:blur(8px);
-      display:none;align-items:center;justify-content:center;z-index:100;padding:24px;
-    }
-    .modal-overlay.active{display:flex}
-    .modal{
-      background:var(--bg-card);border:1px solid var(--obsidian-border);
-      border-radius:16px;padding:24px 20px;max-width:400px;width:100%;position:relative;
-    }
-    .modal-close{
-      position:absolute;top:12px;right:12px;background:none;border:none;
-      color:var(--text-dim);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;
-    }
-    .modal-close:hover{background:var(--obsidian-light);color:var(--text)}
-    .modal h2{font-size:18px;font-weight:700;color:var(--text-bright);margin-bottom:4px}
-    .modal .modal-desc{font-size:13px;color:var(--text-dim);margin-bottom:16px;line-height:1.5}
-    .install-steps{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
-    .install-step{display:flex;gap:10px;align-items:flex-start}
-    .install-step .step-num{
-      width:22px;height:22px;border-radius:6px;font-size:11px;margin-top:1px;
-      background:var(--purple-glow);border:1px solid rgba(124,58,237,.3);
-      color:var(--purple-light);font-weight:700;
-      display:flex;align-items:center;justify-content:center;flex-shrink:0;
-    }
-    .step-content{flex:1;min-width:0}
-    .step-content p{font-size:13px;color:var(--text);line-height:1.4}
-    .copy-box{
-      display:flex;align-items:center;gap:6px;
-      background:var(--obsidian);border:1px solid var(--obsidian-border);
-      border-radius:6px;padding:8px 10px;margin-top:6px;
-      font-family:'SF Mono',Menlo,monospace;font-size:12px;color:var(--purple-light);
-      cursor:pointer;transition:border-color .15s;overflow:hidden;
-    }
-    .copy-box:hover{border-color:var(--purple)}
-    .copy-box code{flex:1;user-select:all;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .copy-box .copy-icon{
-      color:var(--text-dim);font-size:10px;font-weight:600;
-      padding:2px 6px;border-radius:4px;background:var(--obsidian-light);
-      white-space:nowrap;transition:all .15s;flex-shrink:0;
-    }
-    .copy-box.copied .copy-icon{background:var(--green);color:#fff}
-    .modal-note{
-      font-size:11px;color:var(--text-dim);line-height:1.5;
-      padding-top:12px;border-top:1px solid var(--obsidian-border);
-    }
-
     /* Footer */
     footer{text-align:center;padding:40px 24px;border-top:1px solid var(--obsidian-border);font-size:12px;color:var(--text-dim)}
     footer a{color:var(--text-dim)}footer a:hover{color:var(--purple-light)}
@@ -168,42 +120,12 @@
   <h1>Chat with your <span>OpenClaw AI</span> inside Obsidian</h1>
   <p class="subtitle">An Obsidian community plugin that puts your AI agent in the sidebar. Talk to it, send it your notes, and watch it work — all without leaving your vault.</p>
   <div class="cta-group">
-    <button class="cta-btn" onclick="openModal()">Install Obsidian plugin</button>
+    <a class="cta-btn" href="https://community.obsidian.md/plugins/openclaw" target="_blank" rel="noopener noreferrer">Install from Community Plugins</a>
     <a class="cta-secondary" href="https://github.com/oscarhenrycollins/obsidianclaw">GitHub</a>
   </div>
   <p class="cta-sub">Requires <a href="https://openclaw.ai">OpenClaw</a> and <a href="https://obsidian.md">Obsidian</a></p>
-  <p class="cta-warn">OpenClaw 2026.3.x has a <a href="https://github.com/oscarhenrycollins/obsidianclaw#prerequisites">known connection bug</a>. Use 2026.2.26 until patched.</p>
+  <p class="cta-warn">If the first connection fails, run the <a href="https://github.com/oscarhenrycollins/obsidianclaw#one-time-openclaw-patch-required">one-time OpenClaw patch</a>.</p>
 </section>
-
-<!-- Install Modal -->
-<div class="modal-overlay" id="installModal" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal()">✕</button>
-    <h2>Install</h2>
-    <p class="modal-desc">Pending in the Obsidian plugin store. Install via BRAT for now:</p>
-    <div class="install-steps">
-      <div class="install-step">
-        <div class="step-num">1</div>
-        <div class="step-content">
-          <p>Install <strong>BRAT</strong> from Community Plugins</p>
-        </div>
-      </div>
-      <div class="install-step">
-        <div class="step-num">2</div>
-        <div class="step-content">
-          <p>BRAT → Add Beta Plugin:</p>
-          <div class="copy-box" onclick="copyRepo(this)">
-            <code>oscarhenrycollins/obsidianclaw</code>
-            <span class="copy-icon">copy</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="modal-note">
-      A setup wizard walks you through connecting. Need OpenClaw first? <a href="https://botsetupguide.com">Start here</a>.
-    </div>
-  </div>
-</div>
 
 <section class="explainer">
   <h2>What's OpenClaw?</h2>
@@ -228,7 +150,7 @@
     <div class="step-num">1</div>
     <div class="step-text">
       <h4>Install the plugin</h4>
-      <p>Add it through BRAT in Obsidian. One line to paste.</p>
+      <p>Install OpenClaw from Obsidian's Community Plugins browser, then enable it.</p>
     </div>
   </div>
   <div class="step">
@@ -261,18 +183,6 @@
     <img src="/humanity-labs-logo.png" alt="Humanity Labs">
   </a>
 </footer>
-
-<script>
-function openModal(){document.getElementById('installModal').classList.add('active')}
-function closeModal(){document.getElementById('installModal').classList.remove('active')}
-function copyRepo(el){
-  navigator.clipboard.writeText('oscarhenrycollins/obsidianclaw');
-  el.classList.add('copied');
-  el.querySelector('.copy-icon').textContent='copied!';
-  setTimeout(()=>{el.classList.remove('copied');el.querySelector('.copy-icon').textContent='copy'},2000);
-}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});
-</script>
 
 </body>
 </html>
