@@ -708,6 +708,8 @@ class OnboardingModal extends Modal {
       cls: "openclaw-onboard-desc",
     });
 
+    this.renderPatchNotice(el);
+
     const btnRow = el.createDiv("openclaw-onboard-buttons openclaw-onboard-buttons-vertical");
 
     const freshBtn = btnRow.createEl("button", { text: "I need to install OpenClaw", cls: "mod-cta openclaw-full-width" });
@@ -715,6 +717,34 @@ class OnboardingModal extends Modal {
 
     const existBtn = btnRow.createEl("button", { text: "OpenClaw is already running", cls: "openclaw-full-width" });
     existBtn.addEventListener("click", () => { this.path = "existing"; this.step = 1; this.renderStep(); });
+  }
+
+  // ─── Required patch notice (shown on welcome + on connect failure) ─
+
+  private renderPatchNotice(el: HTMLElement): void {
+    const box = el.createDiv("openclaw-onboard-warn");
+    const head = box.createDiv("openclaw-onboard-warn-head");
+    head.createSpan({ text: "⚠️ ", cls: "openclaw-onboard-warn-icon" });
+    head.createEl("strong", { text: "One-time patch required on your OpenClaw gateway" });
+
+    const body = box.createDiv("openclaw-onboard-warn-body");
+    body.appendText("Obsidian loads from ");
+    body.createEl("code", { text: "app://obsidian.md" });
+    body.appendText(", which vanilla OpenClaw rejects. A small idempotent script adds the needed origin fallback. ");
+    body.createEl("strong", { text: "Re-run after every " });
+    body.createEl("code", { text: "openclaw update" });
+    body.createEl("strong", { text: "." });
+
+    const details = box.createEl("details", { cls: "openclaw-onboard-warn-details" });
+    details.createEl("summary", { text: "Show the command" });
+    const cmd = "curl -fsSL https://raw.githubusercontent.com/oscarhenrycollins/obsidianclaw/main/scripts/patch-openclaw.sh | sudo bash";
+    this.makeCopyBox(details, cmd);
+    const linkLine = details.createDiv("openclaw-onboard-hint");
+    linkLine.appendText("Review the script first: ");
+    linkLine.createEl("a", {
+      text: "scripts/patch-openclaw.sh",
+      href: "https://github.com/oscarhenrycollins/obsidianclaw/blob/main/scripts/patch-openclaw.sh",
+    });
   }
 
   // ─── Fresh path: Step 1 — API Keys ───────────────────────────────
@@ -3918,6 +3948,11 @@ export default class OpenClawPlugin extends Plugin {
   gatewayConnected = false;
   lastGatewayConnectError = "";
   chatView: OpenClawChatView | null = null;
+  // Consecutive close events with no successful hello in between.
+  // After a few in a row, we surface the patch hint — a likely sign the
+  // gateway is rejecting our origin during the websocket handshake.
+  private handshakeFailuresInARow = 0;
+  private patchHintShownThisSession = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -4033,6 +4068,7 @@ export default class OpenClawPlugin extends Plugin {
       onHello: () => {
         this.gatewayConnected = true;
         this.lastGatewayConnectError = "";
+        this.handshakeFailuresInARow = 0;
         this.chatView?.updateStatus();
         this.chatView?.hidePairingBanner(); // Dismiss pairing banner on successful connection
         void this.chatView?.loadHistory();
@@ -4046,12 +4082,27 @@ export default class OpenClawPlugin extends Plugin {
         }
       },
       onClose: (info) => {
+        const wasConnected = this.gatewayConnected;
         this.gatewayConnected = false;
         this.chatView?.updateStatus();
         // Show pairing banner if needed
         const reason = info.reason.toLowerCase();
         if (reason.includes("pair") || reason.includes("device") || reason.includes("approval") || reason.includes("scope") || reason.includes("auth")) {
           this.chatView?.showPairingBanner();
+        }
+        // Track handshake-only failures (closed without ever reaching onHello).
+        // 3+ in a row with no descriptive reason is a strong hint the gateway
+        // rejected our origin at the websocket upgrade — show the patch tip once.
+        if (!wasConnected) {
+          this.handshakeFailuresInARow += 1;
+          const lacksReason = !info.reason || info.reason.trim() === "";
+          if (this.handshakeFailuresInARow >= 3 && lacksReason && !this.patchHintShownThisSession) {
+            this.patchHintShownThisSession = true;
+            new Notice(
+              "OpenClaw: handshake keeps failing. If your gateway is reachable, you may need to (re-)apply the origin patch. Open Settings → OpenClaw → Run setup wizard for the command.",
+              12000,
+            );
+          }
         }
       },
       onConnectError: (message) => {

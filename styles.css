@@ -1500,6 +1500,40 @@
   font-size: 12px;
   margin: 12px 0;
 }
+.openclaw-onboard-warn {
+  background: rgba(255, 152, 0, 0.08);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 16px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.openclaw-onboard-warn-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+.openclaw-onboard-warn-icon {
+  flex: 0 0 auto;
+}
+.openclaw-onboard-warn-body code {
+  font-size: 11px;
+  background: var(--background-secondary);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.openclaw-onboard-warn-details {
+  margin-top: 10px;
+}
+.openclaw-onboard-warn-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-accent);
+  user-select: none;
+  margin-bottom: 6px;
+}
 .openclaw-onboard-list {
   font-size: 13px;
   padding-left: 20px;

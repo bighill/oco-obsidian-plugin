@@ -14,6 +14,29 @@ Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs,
 - **"Ask about this note"** — Send any note as context with one command
 - **Dark/light theme** — Follows your Obsidian theme automatically
 
+## Prerequisites
+
+Before you install the plugin, you'll need:
+
+- [OpenClaw](https://openclaw.ai) gateway running somewhere (Mac, Linux, Raspberry Pi)
+- [Tailscale](https://tailscale.com/download) on all your devices
+- Gateway bound to Tailscale: `openclaw config set gateway.bind tailnet && openclaw gateway restart`
+- **A small patch to OpenClaw** so it accepts Obsidian's `app://obsidian.md` origin — see below.
+
+### One-time OpenClaw patch (required)
+
+Obsidian's renderer loads from `app://obsidian.md`. Per the URL spec, custom schemes have a "null" origin, so vanilla OpenClaw rejects the websocket handshake from Obsidian. This plugin needs a one-line fallback added to OpenClaw's origin check.
+
+Run this on your **gateway machine**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/oscarhenrycollins/obsidianclaw/main/scripts/patch-openclaw.sh | sudo bash
+```
+
+The script is idempotent, backs up the file it edits, and restarts the gateway. Review it first: [`scripts/patch-openclaw.sh`](scripts/patch-openclaw.sh).
+
+> ⚠️ **Re-run this after every `openclaw update`** — gateway upgrades wipe the patch. We're tracking an upstream fix so this requirement can be removed.
+
 ## Install
 
 ### Official Community Plugin (recommended)
@@ -49,12 +72,6 @@ The setup wizard opens automatically after install:
 
 Done. The device is remembered permanently.
 
-### Prerequisites
-
-- [OpenClaw](https://openclaw.ai) gateway running somewhere (Mac, Linux, Raspberry Pi)
-- [Tailscale](https://tailscale.com/download) on all your devices
-- Gateway bound to Tailscale: `openclaw config set gateway.bind tailnet && openclaw gateway restart`
-
 > If connection fails, first confirm gateway health and Serve routes:
 > `openclaw status` and `tailscale serve status`
 
@@ -70,6 +87,8 @@ Done. The device is remembered permanently.
 ## Troubleshooting
 
 **"Could not connect" / "Disconnected"** — Most common cause: the gateway stopped. SSH into your gateway machine and run `openclaw gateway restart`. If that fixes it, the gateway had crashed. Also check: Is Tailscale running on both devices? Is the URL correct (`ws://<tailscale-ip>:18789`)? Is the token right?
+
+**Connection rejected right after an OpenClaw update** — `openclaw update` wipes the origin-check patch. Re-run the [one-time OpenClaw patch](#one-time-openclaw-patch-required) on your gateway machine.
 
 **"Pairing required"** — Every new device needs a one-time approval. Run `openclaw devices list` and `openclaw devices approve <requestId>` on your gateway machine, or approve from the dashboard.
 
