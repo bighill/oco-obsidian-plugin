@@ -1696,6 +1696,16 @@ class OpenClawChatView extends ItemView {
 
     // Events
     this.inputEl.addEventListener("keydown", (e) => {
+      // @-mention dropdown captures navigation keys while open
+      if (this.suggest.isOpen) {
+        if (e.key === "ArrowDown") { e.preventDefault(); this.suggest.moveSelection(1); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); this.suggest.moveSelection(-1); return; }
+        if (e.key === "Escape") { e.preventDefault(); this.closeMentionSuggest(); return; }
+        if (e.key === "Enter" || e.key === "Tab") {
+          const item = this.suggest.current();
+          if (item) { e.preventDefault(); this.chooseMention(item); return; }
+        }
+      }
       if (e.key === "Enter") {
         // Mobile: Enter always creates new line (use send button to send)
         // Desktop: Enter sends, Shift+Enter creates new line
