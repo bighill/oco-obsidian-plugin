@@ -102,9 +102,21 @@ Refactor from single to array. No UX changes — just plumbing so multiple files
 
 ---
 
-## Phase 2: Inline @-Suggest
+## Phase 2: Inline @-Suggest — IMPLEMENTED (pending manual vault test)
 
 The core feature. A custom dropdown positioned below the textarea that fuzzy-searches vault files on keystroke.
+
+> Built across small commits on `feat/at-mention`:
+> - `rankMentions` ranking comparator (`at-mention.ts`, unit-tested)
+> - `InlineSuggest` dropdown class (`main.ts`): overlay, wrap-around highlight, click/hover select
+> - Textarea `input` trigger → `detectMention` → open/update/close, ranked via Obsidian `prepareFuzzySearch`; blur closes
+> - Keydown nav: Arrows move, Enter/Tab select, Escape closes (intercepted before send)
+> - `chooseMention`: strips the `@query` (caret stays put), reads the vault file, attaches text/image/binary
+> - CSS in `styles.css`, themed with Obsidian vars
+>
+> **Deviation from the plan:** Escape only closes the dropdown; it does **not** delete the typed `@query` (2.2) — that felt destructive. `@@`-as-literal is handled at detection time (no picker) rather than via an insert step. The Backspace-at-empty-`@` auto-close (2.2) isn't special-cased: deleting the `@` simply makes `detectMention` return null, which closes it.
+>
+> The **Unit (write-first)** checklist under 2.7 is done and green (25 tests). The **Manual (in Obsidian)** checklist under 2.7 still needs a real vault — I can't drive the UI from here.
 
 ### 2.1 InlineSuggest class
 
@@ -168,7 +180,7 @@ Reuse the existing logic from `handleFileSelect()`:
 - [x] `classifyFile({name, mimeType})` → `image | text | binary`, by mime then extension. (Also now dedupes `handleFileSelect`.)
 - [x] `wrapTextContent(name, content)` → `File: …\n\`\`\`\n…\n\`\`\`` exact string (the `\n\n` separator is added at send-time concat, not here — matches existing behavior)
 - [x] `truncate(content, 10_000)` → boundary cases: at-limit untouched, one-over clipped + marker
-- [ ] Fuzzy ranking comparator (recency + fuzzy score) over fixed `{path, mtime, score}` records — deterministic order. **Next**, alongside the dropdown wiring.
+- [x] `rankMentions` ranking comparator (recency-first with no query; score-desc then recency with a query) over fixed records, scorer injected — 5 deterministic tests.
 
 > Note: the ranking/fuzzy helpers will take plain `{path, mtime, score}` records, not `TFile`, so they stay `obsidian`-free and testable. `main.ts` runs Obsidian's `fuzzySearch` to compute `score`, then maps real `TFile`s onto them.
 
