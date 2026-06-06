@@ -115,7 +115,7 @@ The core feature. A custom dropdown positioned below the textarea that fuzzy-sea
 > - `InlineSuggest` dropdown class (`main.ts`): overlay, wrap-around highlight, click/hover select
 > - Textarea `input` trigger → `detectMention` → open/update/close, ranked via Obsidian `prepareFuzzySearch`; blur closes
 > - Keydown nav: Arrows move, Enter/Tab select, Escape closes (intercepted before send)
-> - `chooseMention`: strips the `@query` (caret stays put), reads the vault file, attaches text/image/binary
+> - `chooseMention`: inserts `@<vault-path>` inline (caret after it), reads the vault file, attaches text/image/binary with no chip (see updated §2.4)
 > - CSS in `styles.css`, themed with Obsidian vars
 >
 > **Deviations from the plan (2.2):**
@@ -153,15 +153,17 @@ Hook into the textarea's `input` and `keydown` events:
 - [x] Enter / Tab: select the highlighted file
 - [x] Escape: close picker without selecting
 
-### 2.4 Selection behavior
+### 2.4 Selection behavior — **inline model** (updated)
 
-When a file is selected:
+When a file is selected (`chooseMention`):
 
-- [x] Remove the `@` + query text from the textarea (`removeMentionText`)
-- [x] Add the file to `pendingAttachments`
-- [x] Add a chip to the preview strip (via `renderAttachPreview`)
+- [x] Replace the `@query` with inline text `@<vault-path> ` (`insertMentionText` → `replaceMention`), caret left **after** the inserted token so the user keeps typing around it
+- [x] Add the file to `pendingAttachments`, tagged `inline: true` + `token` (the exact `@<path>` inserted)
+- [x] **No chip** — inline mentions live in the textarea; `renderAttachPreview` skips `inline` entries (only file-picker/paste attachments get chips)
 - [x] Close the dropdown
-- [x] Leave the caret where the `@` was, so the user can keep typing
+- [x] **Reconcile on input:** if the `@<path>` token is deleted/mangled in the textarea, `reconcileInlineMentions` drops the attachment (deleting the inline text is how you "un-attach")
+
+> Known limitation: editing *inside* an existing `@<path>` token can re-open the picker (the `@` is still a valid trigger); Escape dismisses it. Token match is exact-substring, so a path that's a prefix of another could keep a removed attachment — unlikely in practice.
 
 ### 2.5 File content handling
 
@@ -198,10 +200,11 @@ Shares the pure helpers with `handleFileSelect()`:
 - [ ] Arrow keys navigate, Enter selects
 - [ ] Escape closes without attaching (text is left as typed)
 - [ ] `@@` — picker does NOT open; text shows literal `@@` (does not collapse to one `@`)
-- [ ] Select a `.md` file — content included in message
-- [ ] Select an image — attached as base64 (no vault copy)
-- [ ] Multiple `@` mentions in one message — all attached
-- [ ] Remove a chip via `×` — removed from attachments
+- [ ] Select a `.md` file — `@<path>` inserted inline (no chip), content included in message
+- [ ] Select an image — `@<path>` inline, attached as base64 (no vault copy, no chip)
+- [ ] Multiple `@` mentions in one message — all inserted inline + all attached
+- [ ] Delete an inline `@<path>` from the textarea — its attachment is dropped (reconcile)
+- [ ] Remove a chip via `×` — still works for file-picker/paste attachments
 - [ ] Backspace deleting the `@` — picker closes (note: `@` with empty query keeps it open)
 
 ---
@@ -273,6 +276,6 @@ These come from testing the feature as a user (attaching the idea doc as @-menti
 
 - [ ] **Deferred — evaluate raw-markdown-in-fenced-block format.** Content arrives inside triple-backtick blocks, so the agent sees raw `##`/`**`/table pipes. Works fine and parses cleanly; revisit only if it proves noisy. (The "move design decisions to decisions.md" / content-reorg suggestions were dropped — those are about how docs are authored, not plugin behavior.)
 
-### Sender intent → inline @-mention (DECIDED: build it)
+### Sender intent → inline @-mention — DONE
 
-- [ ] **Insert the mention as inline text instead of strip-and-chip.** When a file is picked, replace the `@query` with an inline reference (e.g. `@notes.md`) and leave the caret after it, so the user types around it naturally ("review this spec @notes.md…"). The file is still attached. This **reverses** the current 2.4 behavior (strip `@query`, chip-only); update 2.4 + its tests/manual checks once built. Exact inline format (basename vs path vs `[[wikilink]]`) and whether the chip stays — see the pending decision.
+- [x] **Inline text instead of strip-and-chip.** Picking a file now inserts `@<vault-path> ` inline (caret after it) and attaches the file with **no chip**. Decisions: full vault-relative path inline; chip dropped. Deleting the inline text un-attaches via `reconcileInlineMentions`. See updated §2.4. Pure cursor math (`replaceMention`) is unit-tested (3 cases).

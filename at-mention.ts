@@ -56,6 +56,21 @@ export function detectMention(text: string, cursor: number): { query: string; st
 }
 
 /**
+ * Replace the `@query` span (the `@` at `start` plus `queryLen` chars) with
+ * `insert`, returning the new textarea value and where the caret should land
+ * (right after the inserted text). Pure so the cursor math is unit-tested.
+ */
+export function replaceMention(
+  value: string,
+  start: number,
+  queryLen: number,
+  insert: string,
+): { value: string; caret: number } {
+  const end = start + 1 + queryLen;
+  return { value: value.slice(0, start) + insert + value.slice(end), caret: start + insert.length };
+}
+
+/**
  * Rank vault files for the mention dropdown.
  *
  * With no query, returns the most-recently-modified files. With a query,

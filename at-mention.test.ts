@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import { truncate, wrapTextContent, formatTextAttachment, classifyFile, detectMention, rankMentions } from "./at-mention";
+import { truncate, wrapTextContent, formatTextAttachment, classifyFile, detectMention, rankMentions, replaceMention } from "./at-mention";
 
 // ─── truncate ────────────────────────────────────────────────────────
 
@@ -123,6 +123,28 @@ test("detectMention: picks the nearest @ before the cursor", () => {
 
 test("detectMention: cursor at 0 never triggers", () => {
   assert.equal(detectMention("@anything", 0), null);
+});
+
+// ─── replaceMention ──────────────────────────────────────────────────
+
+test("replaceMention: swaps the @query span for the inserted token", () => {
+  // "see @no" — @ at 4, query "no" (len 2)
+  const out = replaceMention("see @no", 4, 2, "@work/notes.md ");
+  assert.equal(out.value, "see @work/notes.md ");
+  assert.equal(out.caret, "see @work/notes.md ".length);
+});
+
+test("replaceMention: preserves text after the mention and sets caret after the insert", () => {
+  // "a @q b" — @ at 2, query "q" (len 1)
+  const out = replaceMention("a @q b", 2, 1, "@x.md ");
+  assert.equal(out.value, "a @x.md  b"); // inserted "@x.md " then the original " b"
+  assert.equal(out.caret, "a @x.md ".length); // caret sits right after the insert
+});
+
+test("replaceMention: empty query (bare @) still replaces just the @", () => {
+  const out = replaceMention("@", 0, 0, "@notes.md ");
+  assert.equal(out.value, "@notes.md ");
+  assert.equal(out.caret, "@notes.md ".length);
 });
 
 // ─── rankMentions ────────────────────────────────────────────────────

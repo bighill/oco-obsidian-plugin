@@ -16,7 +16,7 @@ import {
   setIcon,
 } from "obsidian";
 import { str } from "./lib";
-import { classifyFile, formatTextAttachment, detectMention, rankMentions } from "./at-mention";
+import { classifyFile, formatTextAttachment, detectMention, rankMentions, replaceMention } from "./at-mention";
 
 // ─── Settings ────────────────────────────────────────────────────────
 
@@ -1488,7 +1488,10 @@ class OpenClawChatView extends ItemView {
   private suggest!: InlineSuggest;
   private activeMention: { query: string; start: number } | null = null;
   private fileInputEl!: HTMLInputElement;
-  private pendingAttachments: { name: string; content: string; vaultPath?: string; base64?: string; mimeType?: string }[] = [];
+  // `inline`/`token`: @-mention attachments shown as inline text (no chip). The
+  // token is the exact `@path` string inserted; if it's gone from the textarea,
+  // the attachment is reconciled away (see reconcileInlineMentions).
+  private pendingAttachments: { name: string; content: string; vaultPath?: string; base64?: string; mimeType?: string; inline?: boolean; token?: string }[] = [];
   private sending = false;
   private recording = false;
   private mediaRecorder: MediaRecorder | null = null;
@@ -1732,6 +1735,7 @@ class OpenClawChatView extends ItemView {
       this.autoResize();
       this.updateSendButton();
       this.updateMentionSuggest();
+      this.reconcileInlineMentions();
     });
     this.inputEl.addEventListener("blur", () => {
       if (this.suggest.isOpen) this.closeMentionSuggest();
@@ -3360,16 +3364,21 @@ class OpenClawChatView extends ItemView {
   private async chooseMention(item: SuggestItem): Promise<void> {
     const mention = this.activeMention;
     this.closeMentionSuggest();
-    if (mention) this.removeMentionText(mention);
 
     const file = this.app.vault.getAbstractFileByPath(item.path);
     if (!(file instanceof TFile)) return;
+
+    // Insert the mention as inline text (`@<path>`) where the @query was.
+    const token = `@${file.path}`;
+    if (mention) this.insertMentionText(mention, token);
+
     try {
+      const base = { name: file.name, inline: true, token };
       const kind = classifyFile({ name: file.name, mimeType: "" });
       if (kind === "image") {
         const base64 = arrayBufferToBase64(await this.app.vault.readBinary(file));
         this.pendingAttachments.push({
-          name: file.name,
+          ...base,
           content: `[Attached image: ${file.name}]`,
           base64,
           mimeType: imageMimeFromExt(file.extension),
@@ -3377,24 +3386,37 @@ class OpenClawChatView extends ItemView {
         });
       } else if (kind === "text") {
         const content = await this.app.vault.read(file);
-        this.pendingAttachments.push({ name: file.name, content: formatTextAttachment(file.path, content) });
+        this.pendingAttachments.push({ ...base, content: formatTextAttachment(file.path, content) });
       } else {
-        this.pendingAttachments.push({ name: file.name, content: `[Attached file: ${file.name}]` });
+        this.pendingAttachments.push({ ...base, content: `[Attached file: ${file.name}]` });
       }
-      this.renderAttachPreview();
+      this.updateSendButton();
     } catch (e) {
       new Notice(`Failed to attach ${file.name}: ${e}`);
     }
   }
 
-  /** Strip the `@query` text the mention came from, leaving the caret in its place. */
-  private removeMentionText(mention: { query: string; start: number }): void {
-    const value = this.inputEl.value;
-    const end = mention.start + 1 + mention.query.length;
-    this.inputEl.value = value.slice(0, mention.start) + value.slice(end);
-    this.inputEl.setSelectionRange(mention.start, mention.start);
+  /** Replace the `@query` with inline mention text, caret left after it. */
+  private insertMentionText(mention: { query: string; start: number }, token: string): void {
+    const { value, caret } = replaceMention(this.inputEl.value, mention.start, mention.query.length, `${token} `);
+    this.inputEl.value = value;
+    this.inputEl.setSelectionRange(caret, caret);
     this.autoResize();
     this.updateSendButton();
+  }
+
+  /** Drop any inline @-mention attachment whose token is no longer in the textarea. */
+  private reconcileInlineMentions(): void {
+    const value = this.inputEl.value;
+    let changed = false;
+    for (let i = this.pendingAttachments.length - 1; i >= 0; i--) {
+      const att = this.pendingAttachments[i];
+      if (att.inline && att.token && !value.includes(att.token)) {
+        this.pendingAttachments.splice(i, 1);
+        changed = true;
+      }
+    }
+    if (changed) this.updateSendButton();
   }
 
   async handleFileSelect(): Promise<void> {
@@ -3480,14 +3502,16 @@ class OpenClawChatView extends ItemView {
 
   private renderAttachPreview(): void {
     this.attachPreviewEl.empty();
-    if (this.pendingAttachments.length === 0) {
+    // Inline @-mentions live in the textarea, not the chip strip.
+    const chipped = this.pendingAttachments.filter((a) => !a.inline);
+    if (chipped.length === 0) {
       this.attachPreviewEl.addClass("oc-hidden");
       return;
     }
     this.attachPreviewEl.removeClass("oc-hidden");
 
-    for (let i = 0; i < this.pendingAttachments.length; i++) {
-      const att = this.pendingAttachments[i];
+    for (let i = 0; i < chipped.length; i++) {
+      const att = chipped[i];
       const chip = this.attachPreviewEl.createDiv("openclaw-attach-chip");
 
       // Show thumbnail for images
@@ -3503,9 +3527,11 @@ class OpenClawChatView extends ItemView {
 
       chip.createSpan({ text: att.name, cls: "openclaw-attach-name" });
       const removeBtn = chip.createEl("button", { text: "✕", cls: "openclaw-attach-remove" });
-      const idx = i;
       removeBtn.addEventListener("click", () => {
-        this.pendingAttachments.splice(idx, 1);
+        // Splice the actual object — `chipped` is a filtered view, so its index
+        // doesn't line up with the backing array.
+        const at = this.pendingAttachments.indexOf(att);
+        if (at >= 0) this.pendingAttachments.splice(at, 1);
         this.renderAttachPreview();
       });
     }
