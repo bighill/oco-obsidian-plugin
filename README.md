@@ -1,8 +1,10 @@
-# OpenClaw
+# OpenClaw for Obsidian — bighill fork
 
 **Chat with your [OpenClaw](https://openclaw.ai) AI agent directly from Obsidian.**
 
 Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs, no separate apps — just your notes and your AI, side by side.
+
+> **🍴 This is an unofficial fork.** Forked from [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw), originally built by [Humanity Labs](https://humanitylabs.org). It is **not affiliated with or endorsed by** the original authors, and is maintained for personal use by [@bighill](https://github.com/bighill). Want the official plugin? Install **OpenClaw** from the Obsidian community store instead. Full upstream attribution under [Credits](#credits).
 
 ## Features
 
@@ -30,7 +32,7 @@ Obsidian's renderer loads from `app://obsidian.md`. Per the URL spec, custom sch
 Run this on your **gateway machine**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/oscarhenrycollins/obsidianclaw/main/scripts/patch-openclaw.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/bighill/obsidianclaw/main/scripts/patch-openclaw.sh | sudo bash
 ```
 
 The script is idempotent, backs up the file it edits, and restarts the gateway. Review it first: [`scripts/patch-openclaw.sh`](scripts/patch-openclaw.sh).
@@ -39,21 +41,17 @@ The script is idempotent, backs up the file it edits, and restarts the gateway. 
 
 ## Install
 
-### Official Community Plugin (recommended)
+This fork is **not** published to the Obsidian community store — install it with BRAT or build it yourself. (If you'd rather run the official, store-reviewed plugin, search **OpenClaw** under **Settings → Community plugins → Browse**: <https://community.obsidian.md/plugins/openclaw>.)
 
-1. In Obsidian, open **Settings → Community plugins → Browse**
-2. Search for **OpenClaw**
-3. Click **Install**, then **Enable**
-
-Plugin page: https://community.obsidian.md/plugins/openclaw
-
-### BRAT (optional)
-
-If you want pre-release builds:
+### BRAT (recommended for this fork)
 
 1. Install **BRAT**
 2. **BRAT → Add Beta Plugin**
-3. Use repo: `oscarhenrycollins/obsidianclaw`
+3. Use repo: `bighill/obsidianclaw`
+
+### Manual
+
+See [Building from Source](#building-from-source) below.
 
 ## Connect
 
@@ -101,7 +99,7 @@ Three layers: **Tailscale** encrypts all traffic (WireGuard VPN), **gateway toke
 ## Building from Source
 
 ```bash
-git clone https://github.com/oscarhenrycollins/obsidianclaw.git
+git clone https://github.com/bighill/obsidianclaw.git
 cd obsidianclaw
 npm install
 npm run build
@@ -111,11 +109,19 @@ Copy `main.js`, `manifest.json`, and `styles.css` to `.obsidian/plugins/openclaw
 
 ## Links
 
-- [ObsidianClaw](https://obsidianclaw.ai) — Official site
+- [This fork](https://github.com/bighill/obsidianclaw) — what you're looking at
 - [OpenClaw](https://openclaw.ai) — The AI agent framework
 - [Bot Setup Guide](https://botsetupguide.com) — Full setup walkthrough
-- [Humanity Labs](https://humanitylabs.org) — Built by Humanity Labs
+
+## Credits
+
+Original work © [Humanity Labs](https://humanitylabs.org), distributed under the MIT License.
+
+- Upstream repo: [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw)
+- Official site: [obsidianclaw.ai](https://obsidianclaw.ai)
+
+This fork keeps the upstream MIT license and exists only to track personal changes on top of that work. All credit for the original plugin goes to the Humanity Labs team.
 
 ## License
 
-MIT
+MIT — see upstream [Credits](#credits). Original copyright retained; fork modifications by [@bighill](https://github.com/bighill).

@@ -1,12 +1,12 @@
-# Contributing to OpenClaw
+# Contributing to this fork
 
-Thanks for contributing.
+Thanks for contributing. Note this is an unofficial fork of [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw) (originally by [Humanity Labs](https://humanitylabs.org)), maintained by [@bighill](https://github.com/bighill). If your change is broadly useful, consider sending it upstream too. Bug reports and PRs for the fork go to [`bighill/obsidianclaw`](https://github.com/bighill/obsidianclaw).
 
 ## Development Setup
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/oscarhenrycollins/obsidianclaw.git
+   git clone https://github.com/bighill/obsidianclaw.git
    cd obsidianclaw
    ```
 2. Install dependencies:
@@ -44,4 +44,4 @@ npm run build
 ## Security
 
 - Do not commit tokens, secrets, or personal vault data.
-- Report security issues privately to the maintainers.
+- Report security issues privately — see [SECURITY.md](SECURITY.md).
