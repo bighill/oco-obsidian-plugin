@@ -7,7 +7,9 @@
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
     "lint": "eslint main.ts --max-warnings=0",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"**/*.test.ts\"",
+    "test:watch": "node --import tsx --test --watch \"**/*.test.ts\""
   },
   "keywords": [
     "obsidian",
@@ -25,6 +27,7 @@
     "eslint": "^9.39.3",
     "eslint-plugin-obsidianmd": "^0.3.0",
     "obsidian": "latest",
+    "tsx": "^4.22.4",
     "typescript": "^5.9.3"
   }
 }
