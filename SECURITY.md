@@ -1,5 +1,7 @@
 # Security Model
 
+> This document covers the **bighill fork** of ObsidianClaw, an unofficial fork of [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw). The security model below is inherited from upstream; report issues found in this fork to the fork maintainer (see [Reporting Vulnerabilities](#reporting-vulnerabilities)).
+
 ObsidianClaw connects your Obsidian vault to an OpenClaw gateway. This document explains how the connection is secured and what data flows where.
 
 ## Threat Model
@@ -87,5 +89,6 @@ Obsidian Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
 ## Reporting Vulnerabilities
 
 If you find a security issue, please report it responsibly:
-- Email: security@humanitylabs.org
+- **This fork:** email alex@bighill.org, or open a private advisory at <https://github.com/bighill/obsidianclaw/security/advisories>
+- **Upstream issues** (present in the original plugin): report to the original authors at security@humanitylabs.org
 - Do not open a public GitHub issue for security vulnerabilities
