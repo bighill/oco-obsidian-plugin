@@ -118,7 +118,10 @@ The core feature. A custom dropdown positioned below the textarea that fuzzy-sea
 > - `chooseMention`: strips the `@query` (caret stays put), reads the vault file, attaches text/image/binary
 > - CSS in `styles.css`, themed with Obsidian vars
 >
-> **Deviation from the plan:** Escape only closes the dropdown; it does **not** delete the typed `@query` (2.2) — that felt destructive. `@@`-as-literal is handled at detection time (no picker) rather than via an insert step. The Backspace-at-empty-`@` auto-close (2.2) isn't special-cased: deleting the `@` simply makes `detectMention` return null, which closes it.
+> **Deviations from the plan (2.2):**
+> - Escape only closes the dropdown; it does **not** delete the typed `@query` (felt destructive).
+> - `@@` only *suppresses* the picker — the text keeps a literal `@@`; it does **not** collapse to a single `@` as the plan intended.
+> - Backspace has no special handling: an empty query (`@` alone) keeps the picker **open**; it closes only once the `@` itself is deleted (`detectMention` returns null). The plan's "close on empty query" is not implemented.
 >
 > The **Unit (write-first)** checklist under 2.7 is done and green (25 tests). The **Manual (in Obsidian)** checklist under 2.7 still needs a real vault — I can't drive the UI from here.
 
@@ -140,9 +143,9 @@ Hook into the textarea's `input` and `keydown` events:
 - [x] On `input`: detect `@` after whitespace or at start → open suggest
 - [x] Do NOT trigger mid-word (`email@domain`) — `detectMention` only fires at a word boundary
 - [x] On further input: update the query (everything after `@` until cursor)
-- [x] `@@`: skip picker — handled at detection (`@@` doesn't trigger), so no special insert step needed
+- [~] `@@`: picker is suppressed, but the text keeps a literal **`@@`** (two chars). The plan wanted `@@` to collapse to a single literal `@` — **not implemented**. `detectMention` returns null when the word starts with `@@`, so the picker just doesn't open.
 - [~] Escape: closes the picker but does **not** delete the typed `@query` (deliberate deviation — deleting text on Escape felt destructive)
-- [x] Backspace with empty query: closes — implicit, since deleting the `@` makes `detectMention` return null
+- [~] Backspace: closes only when the `@` itself is deleted (then `detectMention` returns null). With an **empty query** (`@` alone, cursor after it) the picker **stays open** showing all files — the plan's "close on empty query" is **not implemented**.
 
 ### 2.3 Keyboard navigation
 
@@ -186,20 +189,20 @@ Shares the pure helpers with `handleFileSelect()`:
 - [x] `truncate(content, 10_000)` → boundary cases: at-limit untouched, one-over clipped + marker
 - [x] `rankMentions` ranking comparator (recency-first with no query; score-desc then recency with a query) over fixed records, scorer injected — 5 deterministic tests.
 
-> Note: the ranking/fuzzy helpers will take plain `{path, mtime, score}` records, not `TFile`, so they stay `obsidian`-free and testable. `main.ts` runs Obsidian's `fuzzySearch` to compute `score`, then maps real `TFile`s onto them.
+> Note: `rankMentions` takes plain `{path, mtime}` records plus an **injected `score(query, path)` function**, not `TFile`, so it stays `obsidian`-free and testable. `main.ts` (`mentionItems`) backs that function with Obsidian's `prepareFuzzySearch(query)` and maps real `TFile`s onto the records.
 
 **Manual (in Obsidian):**
 
 - [ ] Type `@` — dropdown appears with vault files
 - [ ] Type `@proj` — dropdown filters to files matching "proj"
 - [ ] Arrow keys navigate, Enter selects
-- [ ] Escape closes without attaching
-- [ ] `@@` inserts literal `@`
+- [ ] Escape closes without attaching (text is left as typed)
+- [ ] `@@` — picker does NOT open; text shows literal `@@` (does not collapse to one `@`)
 - [ ] Select a `.md` file — content included in message
-- [ ] Select an image — saved to vault, referenced
+- [ ] Select an image — attached as base64 (no vault copy)
 - [ ] Multiple `@` mentions in one message — all attached
 - [ ] Remove a chip via `×` — removed from attachments
-- [ ] Backspace at `@` with no query — closes picker and removes `@`
+- [ ] Backspace deleting the `@` — picker closes (note: `@` with empty query keeps it open)
 
 ---
 
