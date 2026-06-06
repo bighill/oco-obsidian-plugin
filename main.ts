@@ -13,15 +13,11 @@ import {
   WorkspaceLeaf,
   setIcon,
 } from "obsidian";
+import { str } from "./lib";
 
 // ─── Settings ────────────────────────────────────────────────────────
 
 type StreamItem = { type: "tool"; label: string; url?: string; textPos?: number } | { type: "text"; text: string };
-
-/** Safely extract a string from an unknown value (avoids [object Object] coercion). */
-function str(v: unknown, fallback = ""): string {
-  return typeof v === "string" ? v : fallback;
-}
 
 /** Create an SVG element from attributes (avoids innerHTML for ObsidianReviewBot compliance). */
 type SvgSpec = { width: number; height: number; viewBox: string; children: Array<{ tag: string; attrs: Record<string, string> }> };
