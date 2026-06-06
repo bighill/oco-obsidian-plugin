@@ -40,3 +40,29 @@ export function detectMention(text: string, cursor: number): { query: string; st
   if (word[0] !== "@" || word[1] === "@") return null;
   return { query: word.slice(1), start };
 }
+
+/**
+ * Rank vault files for the mention dropdown.
+ *
+ * With no query, returns the most-recently-modified files. With a query,
+ * keeps only files the `score` fn matches (returns non-null), sorted by score
+ * descending and recency as the tiebreak. The `score` fn is injected so this
+ * stays `obsidian`-free — `main.ts` backs it with `prepareQuery`/`fuzzySearch`.
+ */
+export function rankMentions<T extends { path: string; mtime: number }>(
+  files: T[],
+  query: string,
+  score: (query: string, path: string) => number | null,
+  limit = 50,
+): T[] {
+  if (!query) {
+    return [...files].sort((a, b) => b.mtime - a.mtime).slice(0, limit);
+  }
+  const scored: { file: T; s: number }[] = [];
+  for (const file of files) {
+    const s = score(query, file.path);
+    if (s !== null) scored.push({ file, s });
+  }
+  scored.sort((a, b) => b.s - a.s || b.file.mtime - a.file.mtime);
+  return scored.slice(0, limit).map(x => x.file);
+}

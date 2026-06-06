@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import { truncate, wrapTextContent, classifyFile, detectMention } from "./at-mention";
+import { truncate, wrapTextContent, classifyFile, detectMention, rankMentions } from "./at-mention";
 
 // ─── truncate ────────────────────────────────────────────────────────
 
@@ -91,4 +91,49 @@ test("detectMention: picks the nearest @ before the cursor", () => {
 
 test("detectMention: cursor at 0 never triggers", () => {
   assert.equal(detectMention("@anything", 0), null);
+});
+
+// ─── rankMentions ────────────────────────────────────────────────────
+
+const files = [
+  { path: "old/notes.md", mtime: 100 },
+  { path: "new/project.md", mtime: 300 },
+  { path: "mid/proposal.md", mtime: 200 },
+];
+
+// A deterministic stand-in for Obsidian's fuzzySearch: returns a score when
+// the query is a substring of the path, else null (no match).
+const substr = (q: string, path: string): number | null =>
+  path.includes(q) ? path.length : null;
+
+test("rankMentions: empty query returns all, most-recent first", () => {
+  const out = rankMentions(files, "", substr).map(f => f.path);
+  assert.deepEqual(out, ["new/project.md", "mid/proposal.md", "old/notes.md"]);
+});
+
+test("rankMentions: empty query respects the limit", () => {
+  const out = rankMentions(files, "", substr, 2).map(f => f.path);
+  assert.deepEqual(out, ["new/project.md", "mid/proposal.md"]);
+});
+
+test("rankMentions: query filters out non-matches", () => {
+  const out = rankMentions(files, "pro", substr).map(f => f.path);
+  // "project.md" and "proposal.md" match "pro"; "notes.md" does not.
+  assert.deepEqual(out.sort(), ["mid/proposal.md", "new/project.md"]);
+});
+
+test("rankMentions: query sorts by score desc, then recency", () => {
+  // Equal scores -> recency breaks the tie (newer first).
+  const equalScore = (q: string, path: string): number | null =>
+    path.includes(q) ? 1 : null;
+  const out = rankMentions(files, "p", equalScore).map(f => f.path);
+  // Only the two paths containing "p" match; newer (project) before older.
+  assert.deepEqual(out, ["new/project.md", "mid/proposal.md"]);
+});
+
+test("rankMentions: higher score wins over recency", () => {
+  const byScore = (q: string, path: string): number | null =>
+    path.includes(q) ? (path === "old/notes.md" ? 99 : 1) : null;
+  const out = rankMentions(files, "o", byScore).map(f => f.path);
+  assert.equal(out[0], "old/notes.md"); // oldest, but top score
 });
