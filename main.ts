@@ -1631,7 +1631,7 @@ class OnboardingModal extends Modal {
                 pairBtn.textContent = "Check pairing status";
               } else {
                 this.showStatus(
-                  "Could not reach the gateway. Go back and check the gateway URL, token, Tailscale, and Serve status.",
+                  "Could not reach the gateway. Check the gateway URL, token, and that the gateway is running (`openclaw status`).",
                   "error",
                 );
               }
@@ -1765,7 +1765,7 @@ class OnboardingModal extends Modal {
     controlTip.createEl("strong", { text: "🖥️ control UI: " });
     const ctrlSpan = controlTip.createSpan();
     ctrlSpan.setText(
-      "You can also manage your gateway from any browser on your Tailscale network. Just open your gateway URL in a browser.",
+      "You can also manage your gateway from any browser on this machine. Just open http://127.0.0.1:18789 in a browser.",
     );
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
@@ -6016,7 +6016,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     const wizardDesc = wizardSection.createDiv("openclaw-settings-wizard-desc");
     wizardDesc.createEl("strong", { text: "Setup wizard" });
     wizardDesc.createEl("p", {
-      text: "The easiest way to connect. Walks you through Tailscale, gateway setup, and device pairing step by step.",
+      text: "The easiest way to connect. Walks you through gateway setup and device pairing step by step.",
       cls: "setting-item-description",
     });
     const wizardBtn = wizardSection.createEl("button", {
