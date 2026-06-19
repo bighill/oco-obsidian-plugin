@@ -9,21 +9,20 @@ OcO connects your Obsidian vault to an OpenClaw gateway. This document explains 
 OcO is designed for **personal use** — your devices, your gateway, your data. The security model assumes:
 
 - You control both the Obsidian client and the OpenClaw gateway
-- Network access is restricted to your devices (via Tailscale or localhost)
-- You trust the machines in your Tailnet
+- Network access is restricted to localhost by default (127.0.0.1)
+- Cross-device access should use a private tunnel (e.g., WireGuard, Tailscale) rather than exposing the port
 
 ## Three-Layer Security
 
-### 1. Network Layer: Tailscale WireGuard
+### 1. Network Layer: Localhost Binding
 
-For cross-device setups, all traffic flows over [Tailscale](https://tailscale.com), which uses WireGuard encryption:
+By default, the gateway binds to **loopback only** (`127.0.0.1`). Traffic never leaves your machine:
 
-- **End-to-end encrypted** between your devices
-- **No ports exposed** to the public internet
-- **Identity-based access** — only your authenticated devices can connect
-- The `ws://` protocol over Tailscale is effectively as secure as `wss://` because WireGuard encrypts at the network layer
+- **No external ports exposed**
+- **No network traversal needed**
+- **`ws://` is fine over localhost** because the data never crosses a network boundary
 
-For same-machine setups, traffic stays on localhost (127.0.0.1) and never touches the network.
+For cross-device setups, put a private tunnel (e.g., WireGuard, Tailscale, SSH port-forward) in front of the gateway rather than binding to a public interface.
 
 ### 2. Application Layer: Token Authentication
 
@@ -52,7 +51,7 @@ This prevents:
 ## Data Flow
 
 ```
-OcO Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
+OcO Plugin  ←→  localhost / private tunnel  ←→  OpenClaw Gateway
      ↓                                              ↓
   Plugin Data                                   Agent Session
   (data.json)                                   (transcript)
@@ -80,7 +79,7 @@ OcO Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
 
 ## Recommendations
 
-1. **Use Tailscale** for cross-device setups — never expose your gateway to the public internet
+1. **Keep the gateway bound to loopback** — avoid `0.0.0.0` unless you know what you're doing
 2. **Use a strong, unique token** — generate with `openssl rand -hex 24`
 3. **Review paired devices** periodically — `openclaw devices list`
 4. **Revoke unused devices** — `openclaw devices revoke --device <id> --role operator`
