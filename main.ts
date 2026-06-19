@@ -1237,7 +1237,7 @@ class OnboardingModal extends Modal {
     this.makeCopyBox(el, installCmd);
 
     el.createEl("p", {
-      text: "This installs OpenClaw, writes your config with all API keys and bot settings, configures Tailscale Serve, and starts the gateway.",
+      text: "This installs OpenClaw, writes your config with all API keys and bot settings, and starts the gateway.",
       cls: "openclaw-onboard-hint",
     });
 
@@ -1251,16 +1251,7 @@ class OnboardingModal extends Modal {
     pre.textContent = JSON.stringify(config, null, 2);
 
     el.createEl("p", {
-      text: "After it finishes, install Tailscale if you haven't:",
-      cls: "openclaw-onboard-desc",
-    });
-    this.makeCopyBox(
-      el,
-      "# Mac:\nbrew install --cask tailscale\n\n# Linux:\ncurl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up",
-    );
-
-    el.createEl("p", {
-      text: "Then install Tailscale on this device too, using the same account.",
+      text: "The gateway will be available locally at ws://127.0.0.1:18789.",
       cls: "openclaw-onboard-hint",
     });
 
@@ -1300,8 +1291,7 @@ class OnboardingModal extends Modal {
       gateway: {
         port: 18789,
         bind: "loopback",
-        tailscale: { mode: "serve" },
-        auth: { mode: "token", allowTailscale: true },
+        auth: { mode: "token" },
       },
     };
     const profiles = auth.profiles as Record<string, unknown>;
