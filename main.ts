@@ -488,6 +488,8 @@ class GatewayClient {
 
 // ─── Onboarding Modal ────────────────────────────────────────────────
 
+type SetupKey = 'claude1' | 'claude2' | 'googleai' | 'brave' | 'elevenlabs'
+
 class OnboardingModal extends Modal {
   plugin: OpenClawPlugin
   private step = 0
@@ -496,7 +498,7 @@ class OnboardingModal extends Modal {
   private pairingPollTimer: number | null = null
 
   // Setup state for fresh install path
-  private setupKeys = {
+  private setupKeys: Record<SetupKey, string> = {
     claude1: '',
     claude2: '',
     googleai: '',
@@ -686,7 +688,7 @@ class OnboardingModal extends Modal {
     })
 
     const fields: {
-      key: keyof typeof this.setupKeys
+      key: SetupKey
       label: string
       required?: boolean
       placeholder: string
@@ -732,7 +734,7 @@ class OnboardingModal extends Modal {
         const req = label.createSpan({ cls: 'oc-req-label' })
         req.textContent = ' (required)'
       }
-      const fKey = f.key as keyof typeof this.setupKeys
+      const fKey = f.key
       const input = group.createEl('input', {
         type: 'password',
         value: this.setupKeys[fKey],
