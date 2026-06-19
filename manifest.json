@@ -1,10 +1,10 @@
 {
   "id": "openclaw",
-  "name": "OpenClaw",
-  "version": "0.41.11",
+  "name": "OcO",
+  "version": "0.42.0",
   "minAppVersion": "1.0.0",
-  "description": "Chat with your OpenClaw AI agent in a sidebar. Your vault is the agent's workspace.",
-  "author": "Humanity Labs",
-  "authorUrl": "https://humanitylabs.org",
+  "description": "OcO — Chat with your OpenClaw AI agent in Obsidian. Your vault is the workspace.",
+  "author": "bighill",
+  "authorUrl": "https://github.com/bighill",
   "isDesktopOnly": false
 }

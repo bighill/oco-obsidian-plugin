@@ -1,7 +1,7 @@
 {
-  "name": "obsidianclaw",
-  "version": "0.41.11",
-  "description": "Official OpenClaw plugin for Obsidian",
+  "name": "oco-obsidian-plugin",
+  "version": "0.42.0",
+  "description": "OcO — OpenClaw chat sidebar for Obsidian",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -16,9 +16,10 @@
     "openclaw",
     "ai",
     "agent",
-    "chat"
+    "chat",
+    "oco"
   ],
-  "author": "Humanity Labs",
+  "author": "bighill",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",

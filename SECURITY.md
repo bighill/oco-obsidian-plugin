@@ -1,12 +1,12 @@
 # Security Model
 
-> This document covers the **bighill fork** of ObsidianClaw, an unofficial fork of [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw). The security model below is inherited from upstream; report issues found in this fork to the fork maintainer (see [Reporting Vulnerabilities](#reporting-vulnerabilities)).
+> This document covers **OcO** (the bighill fork of ObsidianClaw), an unofficial fork of [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw). The security model below is inherited from upstream; report issues found in this fork to the fork maintainer (see [Reporting Vulnerabilities](#reporting-vulnerabilities)).
 
-ObsidianClaw connects your Obsidian vault to an OpenClaw gateway. This document explains how the connection is secured and what data flows where.
+OcO connects your Obsidian vault to an OpenClaw gateway. This document explains how the connection is secured and what data flows where.
 
 ## Threat Model
 
-ObsidianClaw is designed for **personal use** — your devices, your gateway, your data. The security model assumes:
+OcO is designed for **personal use** — your devices, your gateway, your data. The security model assumes:
 
 - You control both the Obsidian client and the OpenClaw gateway
 - Network access is restricted to your devices (via Tailscale or localhost)
@@ -36,7 +36,7 @@ The gateway requires a shared secret (token) for every WebSocket connection:
 
 ### 3. Device Layer: Ed25519 Fingerprinting
 
-Each ObsidianClaw installation has a unique cryptographic identity:
+Each OcO installation has a unique cryptographic identity:
 
 - **Ed25519 keypair** generated via WebCrypto API on first run
 - **Device ID** = SHA-256 hash of the public key
@@ -52,7 +52,7 @@ This prevents:
 ## Data Flow
 
 ```
-Obsidian Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
+OcO Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
      ↓                                              ↓
   Plugin Data                                   Agent Session
   (data.json)                                   (transcript)
@@ -70,7 +70,7 @@ Obsidian Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
 - Auth token (for authentication)
 - Public key + signature (for device verification)
 - Chat messages you type
-- Note content (only when you use the "Ask about this note" command)
+- Note content (only when you use the "Ask about this note" command or @-mention)
 
 ### What the gateway does NOT receive:
 - Your full vault contents
@@ -89,6 +89,6 @@ Obsidian Plugin  ←→  [Tailscale WireGuard]  ←→  OpenClaw Gateway
 ## Reporting Vulnerabilities
 
 If you find a security issue, please report it responsibly:
-- **This fork:** email alex@bighill.org, or open a private advisory at <https://github.com/bighill/obsidianclaw/security/advisories>
+- **This fork:** email alex@bighill.org, or open a private advisory at <https://github.com/bighill/oco-obsidian-plugin/security/advisories>
 - **Upstream issues** (present in the original plugin): report to the original authors at security@humanitylabs.org
 - Do not open a public GitHub issue for security vulnerabilities

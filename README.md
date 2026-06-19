@@ -1,19 +1,21 @@
-# OpenClaw for Obsidian — bighill fork
+# OcO — OpenClaw Obsidian Plugin
 
 **Chat with your [OpenClaw](https://openclaw.ai) AI agent directly from Obsidian.**
 
 Your vault becomes the workspace. Your AI lives in the sidebar. No browser tabs, no separate apps — just your notes and your AI, side by side.
 
-> **🍴 This is an unofficial fork.** Forked from [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw), originally built by [Humanity Labs](https://humanitylabs.org). It is **not affiliated with or endorsed by** the original authors, and is maintained for personal use by [@bighill](https://github.com/bighill). Want the official plugin? Install **OpenClaw** from the Obsidian community store instead. Full upstream attribution under [Credits](#credits).
+> **🍴 Forked from [ObsidianClaw](https://github.com/oscarhenrycollins/obsidianclaw)** by [Humanity Labs](https://humanitylabs.org). This is **OcO** — a personal fork that grew its own identity. Not affiliated with or endorsed by the original authors. Maintained by [@bighill](https://github.com/bighill). Want the official plugin? Search **OpenClaw** under **Settings → Community plugins → Browse**.
 
 ## Features
 
 - **Chat sidebar** — Talk to your AI agent from any Obsidian tab
 - **Streaming responses** — See replies appear in real-time
 - **Markdown rendering** — Code blocks, lists, links rendered natively
+- **@-mention vault files** — Type `@` to attach any note as context
+- **Drag-and-drop + paste images** — Attach screenshots and images inline
 - **Tool call visibility** — See files read/written, commands run, pages fetched
+- **Multi-session tabs** — Multiple conversations side by side
 - **Cross-device sync** — Chat history and tool calls persist via Obsidian Sync
-- **"Ask about this note"** — Send any note as context with one command
 - **Dark/light theme** — Follows your Obsidian theme automatically
 
 ## Prerequisites
@@ -32,7 +34,7 @@ Obsidian's renderer loads from `app://obsidian.md`. Per the URL spec, custom sch
 Run this on your **gateway machine**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bighill/obsidianclaw/main/scripts/patch-openclaw.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh | sudo bash
 ```
 
 The script is idempotent, backs up the file it edits, and restarts the gateway. Review it first: [`scripts/patch-openclaw.sh`](scripts/patch-openclaw.sh).
@@ -41,13 +43,13 @@ The script is idempotent, backs up the file it edits, and restarts the gateway. 
 
 ## Install
 
-This fork is **not** published to the Obsidian community store — install it with BRAT or build it yourself. (If you'd rather run the official, store-reviewed plugin, search **OpenClaw** under **Settings → Community plugins → Browse**: <https://community.obsidian.md/plugins/openclaw>.)
+This plugin is **not** published to the Obsidian community store — install it with BRAT or build it yourself.
 
-### BRAT (recommended for this fork)
+### BRAT (recommended)
 
 1. Install **BRAT**
 2. **BRAT → Add Beta Plugin**
-3. Use repo: `bighill/obsidianclaw`
+3. Use repo: `bighill/oco-obsidian-plugin`
 
 ### Manual
 
@@ -77,10 +79,10 @@ Done. The device is remembered permanently.
 
 | Command | Description |
 |---------|-------------|
-| `OpenClaw: Toggle chat sidebar` | Open/close the chat panel |
-| `OpenClaw: Ask about current note` | Send the active note as context |
-| `OpenClaw: Reconnect to gateway` | Re-establish the connection |
-| `OpenClaw: Run setup wizard` | Re-run the onboarding flow |
+| `OcO: Toggle chat sidebar` | Open/close the chat panel |
+| `OcO: Ask about current note` | Send the active note as context |
+| `OcO: Reconnect to gateway` | Re-establish the connection |
+| `OcO: Run setup wizard` | Re-run the onboarding flow |
 
 ## Troubleshooting
 
@@ -99,8 +101,8 @@ Three layers: **Tailscale** encrypts all traffic (WireGuard VPN), **gateway toke
 ## Building from Source
 
 ```bash
-git clone https://github.com/bighill/obsidianclaw.git
-cd obsidianclaw
+git clone https://github.com/bighill/oco-obsidian-plugin.git
+cd oco-obsidian-plugin
 npm install
 npm run build
 ```
@@ -109,7 +111,7 @@ Copy `main.js`, `manifest.json`, and `styles.css` to `.obsidian/plugins/openclaw
 
 ## Links
 
-- [This fork](https://github.com/bighill/obsidianclaw) — what you're looking at
+- [This repo](https://github.com/bighill/oco-obsidian-plugin) — what you're looking at
 - [OpenClaw](https://openclaw.ai) — The AI agent framework
 - [Bot Setup Guide](https://botsetupguide.com) — Full setup walkthrough
 

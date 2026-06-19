@@ -1,13 +1,13 @@
-# Contributing to this fork
+# Contributing to OcO
 
-Thanks for contributing. Note this is an unofficial fork of [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw) (originally by [Humanity Labs](https://humanitylabs.org)), maintained by [@bighill](https://github.com/bighill). If your change is broadly useful, consider sending it upstream too. Bug reports and PRs for the fork go to [`bighill/obsidianclaw`](https://github.com/bighill/obsidianclaw).
+Thanks for contributing. Note this is a fork of [`oscarhenrycollins/obsidianclaw`](https://github.com/oscarhenrycollins/obsidianclaw) (originally by [Humanity Labs](https://humanitylabs.org)), maintained by [@bighill](https://github.com/bighill). If your change is broadly useful, consider sending it upstream too. Bug reports and PRs for this fork go to [`bighill/oco-obsidian-plugin`](https://github.com/bighill/oco-obsidian-plugin).
 
 ## Development Setup
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/bighill/obsidianclaw.git
-   cd obsidianclaw
+   git clone https://github.com/bighill/oco-obsidian-plugin.git
+   cd oco-obsidian-plugin
    ```
 2. Install dependencies:
    ```bash
@@ -38,7 +38,7 @@ npm run build
 ## Versioning and Release
 
 - Update `manifest.json` version and `versions.json` when shipping a release.
-- Tag format is `x.y.z` (for example, `0.41.9`).
+- Tag format is `x.y.z` (for example, `0.42.0`).
 - GitHub Actions publishes release assets from tags.
 
 ## Security

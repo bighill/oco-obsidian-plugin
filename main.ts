@@ -673,7 +673,7 @@ class GatewayClient {
     const url = normalizeGatewayUrl(this.opts.url);
     if (!url) {
       console.error(
-        "[ObsidianClaw] Invalid gateway URL: must be a valid ws://, wss://, http://, or https:// URL",
+        "[OcO] Invalid gateway URL: must be a valid ws://, wss://, http://, or https:// URL",
       );
       return;
     }
@@ -763,7 +763,7 @@ class GatewayClient {
           nonce: nonce ?? undefined,
         };
       } catch (e) {
-        console.error("[ObsidianClaw] Device signing failed:", e);
+        console.error("[OcO] Device signing failed:", e);
       }
     }
 
@@ -973,7 +973,7 @@ class OnboardingModal extends Modal {
   // ─── Step 0: Welcome (branching) ─────────────────────────────────
 
   private renderWelcome(el: HTMLElement): void {
-    el.createEl("h2", { text: "Welcome to OpenClaw" });
+    el.createEl("h2", { text: "Welcome to OcO" });
     el.createEl("p", {
       text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace.",
       cls: "openclaw-onboard-desc",
@@ -1031,13 +1031,13 @@ class OnboardingModal extends Modal {
     });
     details.createEl("summary", { text: "Show the command" });
     const cmd =
-      "curl -fsSL https://raw.githubusercontent.com/oscarhenrycollins/obsidianclaw/main/scripts/patch-openclaw.sh | sudo bash";
+      "curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh | sudo bash";
     this.makeCopyBox(details, cmd);
     const linkLine = details.createDiv("openclaw-onboard-hint");
     linkLine.appendText("Review the script first: ");
     linkLine.createEl("a", {
       text: "scripts/patch-openclaw.sh",
-      href: "https://github.com/oscarhenrycollins/obsidianclaw/blob/main/scripts/patch-openclaw.sh",
+      href: "https://github.com/bighill/oco-obsidian-plugin/blob/main/scripts/patch-openclaw.sh",
     });
   }
 
@@ -1891,7 +1891,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
   private renderDone(el: HTMLElement): void {
     el.createEl("h2", { text: "You're all set! 🎉" });
     el.createEl("p", {
-      text: "OpenClaw is connected and ready. Your vault is now the agent's workspace.",
+      text: "OcO is connected and ready. Your vault is now the agent's workspace.",
       cls: "openclaw-onboard-desc",
     });
 
@@ -2193,7 +2193,7 @@ class OpenClawChatView extends ItemView {
   }
 
   getDisplayText(): string {
-    return "OpenClaw";
+    return "OcO";
   }
 
   getIcon(): string {
@@ -2773,7 +2773,7 @@ class OpenClawChatView extends ItemView {
     );
 
     const footer = panel.createDiv("oc-hud-footer");
-    footer.createSpan({ text: `OBSIDIANCLAW ${this.plugin.manifest.version}` });
+    footer.createSpan({ text: `OcO ${this.plugin.manifest.version}` });
   }
 
   async onClose(): Promise<void> {
@@ -2909,7 +2909,7 @@ class OpenClawChatView extends ItemView {
 
       this.updateAgentButton();
     } catch (e) {
-      console.warn("[ObsidianClaw] Failed to load agents:", e);
+      console.warn("[OcO] Failed to load agents:", e);
     }
   }
 
@@ -3033,7 +3033,7 @@ class OpenClawChatView extends ItemView {
         void this.updateContextMeter();
       }
     } catch (e) {
-      console.error("[ObsidianClaw] Failed to load history:", e);
+      console.error("[OcO] Failed to load history:", e);
     }
   }
 
@@ -3163,7 +3163,7 @@ class OpenClawChatView extends ItemView {
       this.updateSendButton();
       this.inputEl.placeholder = "Recording... tap ■ to stop";
     } catch (e) {
-      console.error("[ObsidianClaw] Mic access failed:", e);
+      console.error("[OcO] Mic access failed:", e);
       new Notice("Microphone access denied");
     }
   }
@@ -3254,7 +3254,7 @@ class OpenClawChatView extends ItemView {
     if (!text && !hasAttachments) return;
     if (this.sending) return;
     if (!this.plugin.gateway?.connected) {
-      new Notice("Not connected to OpenClaw gateway");
+      new Notice("Not connected to OcO gateway");
       return;
     }
 
@@ -5269,7 +5269,7 @@ class OpenClawChatView extends ItemView {
             playBtn.textContent = "⏳ loading...";
             try {
               const url = this.buildVoiceUrl(voiceRef);
-              console.debug("[ObsidianClaw] Loading audio from:", url);
+              console.debug("[OcO] Loading audio from:", url);
               audio = new Audio(url);
 
               await new Promise<void>((resolve, reject) => {
@@ -5307,7 +5307,7 @@ class OpenClawChatView extends ItemView {
                 barEl.setCssStyles({ width: "0%" });
               });
             } catch (e) {
-              console.error("[ObsidianClaw] Audio load failed:", e);
+              console.error("[OcO] Audio load failed:", e);
               playBtn.textContent = "⚠ audio unavailable";
               playBtn.disabled = true;
               return;
@@ -5536,7 +5536,7 @@ export default class OpenClawPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new OpenClawChatView(leaf, this));
 
     // Ribbon icon
-    this.addRibbonIcon("message-square", "OpenClaw chat", () => {
+    this.addRibbonIcon("message-square", "OcO chat", () =>> {
       void this.activateView();
     });
 
@@ -5617,7 +5617,7 @@ export default class OpenClawPlugin extends Plugin {
     const url = normalizeGatewayUrl(rawUrl);
     if (!url) {
       new Notice(
-        "OpenClaw: Invalid gateway URL. Use your Tailscale Serve URL (e.g. wss://your-machine.tail1234.ts.net)",
+        "OcO: Invalid gateway URL. Use your Tailscale Serve URL (e.g. wss://your-machine.tail1234.ts.net)",
       );
       return;
     }
@@ -5637,7 +5637,7 @@ export default class OpenClawPlugin extends Plugin {
       );
     } catch (e) {
       console.warn(
-        "[ObsidianClaw] Device identity creation failed, connecting without scopes:",
+        "[OcO] Device identity creation failed, connecting without scopes:",
         e,
       );
     }
@@ -5690,7 +5690,7 @@ export default class OpenClawPlugin extends Plugin {
           ) {
             this.patchHintShownThisSession = true;
             new Notice(
-              "OpenClaw: handshake keeps failing. If your gateway is reachable, you may need to (re-)apply the origin patch. Open Settings → OpenClaw → Run setup wizard for the command.",
+              "OcO: handshake keeps failing. If your gateway is reachable, you may need to (re-)apply the origin patch. Open Settings → OcO → Run setup wizard for the command.",
               12000,
             );
           }
@@ -5740,7 +5740,7 @@ export default class OpenClawPlugin extends Plugin {
     await this.activateView();
 
     if (!this.chatView || !this.gateway?.connected) {
-      new Notice("Not connected to OpenClaw");
+      new Notice("Not connected to OcO");
       return;
     }
 
@@ -6278,7 +6278,7 @@ class OpenClawSettingTab extends PluginSettingTab {
       .addButton((btn) =>
         btn.setButtonText("Reconnect").onClick(() => {
           void this.plugin.connectGateway();
-          new Notice("OpenClaw: Reconnecting...");
+          new Notice("OcO: Reconnecting...");
         }),
       );
   }
