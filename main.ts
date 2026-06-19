@@ -14,8 +14,8 @@ import {
   TFile,
   WorkspaceLeaf,
   setIcon,
-} from "obsidian";
-import { str } from "./lib";
+} from 'obsidian'
+import { str } from './lib'
 import {
   classifyFile,
   formatTextAttachment,
@@ -24,7 +24,7 @@ import {
   replaceMention,
   reconcileMentions,
   splitFileBlocks,
-} from "./at-mention";
+} from './at-mention'
 
 import {
   createSvgIcon,
@@ -37,284 +37,190 @@ import {
   SVG_RESET_10,
   SVG_RESET_11,
   SVG_RESET_12,
-} from "./svgs";
+} from './svgs'
+
+import type {
+  StreamItem,
+  AgentInfo,
+  OpenClawSettings,
+  DeviceIdentity,
+  GatewayPayload,
+  GatewayMessage,
+  SessionInfo,
+  AgentListItem,
+  ModelInfo,
+  ContentBlock,
+  HistoryMessage,
+  GatewayEventHandler,
+  GatewayHelloHandler,
+  GatewayCloseHandler,
+  GatewayConnectErrorHandler,
+  GatewayClientOpts,
+  ChatMessage,
+  SuggestItem,
+} from './types'
 
 // ─── Settings ────────────────────────────────────────────────────────
 
-type StreamItem =
-  | { type: "tool"; label: string; url?: string; textPos?: number }
-  | { type: "text"; text: string };
-
-interface AgentInfo {
-  id: string;
-  name: string;
-  emoji: string;
-  creature: string;
-}
-
-interface OpenClawSettings {
-  gatewayUrl: string;
-  token: string;
-  sessionKey: string;
-  activeAgentId?: string; // currently selected agent id
-  currentModel?: string; // persisted model selection (provider/model format)
-  onboardingComplete: boolean;
-  deviceId?: string;
-  devicePublicKey?: string;
-  devicePrivateKey?: string;
-  /** Persisted stream items (tool calls + intermediary text) keyed by assistant message index */
-  streamItemsMap?: Record<string, StreamItem[]>;
-  /** Saved tab order (non-Home tab keys) */
-  tabOrder?: string[];
-  /** Suppress the close/reset confirmation modal when true. */
-  confirmCloseDisabled?: boolean;
-}
-
 const DEFAULT_SETTINGS: OpenClawSettings = {
-  gatewayUrl: "",
-  token: "",
-  sessionKey: "main",
+  gatewayUrl: '',
+  token: '',
+  sessionKey: 'main',
   onboardingComplete: false,
-};
+}
 
 // ─── Device Identity (Ed25519) ───────────────────────────────────────
 
 /** Normalize a gateway URL: accepts ws://, wss://, http://, https:// and returns ws:// or wss://. Returns null if invalid. */
 function normalizeGatewayUrl(raw: string): string | null {
-  let url = raw.trim();
-  if (url.startsWith("https://")) url = "wss://" + url.slice(8);
-  else if (url.startsWith("http://")) url = "ws://" + url.slice(7);
-  if (!url.startsWith("ws://") && !url.startsWith("wss://")) return null;
+  let url = raw.trim()
+  if (url.startsWith('https://')) url = 'wss://' + url.slice(8)
+  else if (url.startsWith('http://')) url = 'ws://' + url.slice(7)
+  if (!url.startsWith('ws://') && !url.startsWith('wss://')) return null
   // Strip trailing slash for consistency
-  return url.replace(/\/+$/, "");
+  return url.replace(/\/+$/, '')
 }
 
 function toBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
   return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
 }
 
 function fromBase64Url(s: string): Uint8Array {
   const padded =
-    s.replace(/-/g, "+").replace(/_/g, "/") +
-    "=".repeat((4 - (s.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+    s.replace(/-/g, '+').replace(/_/g, '/') +
+    '='.repeat((4 - (s.length % 4)) % 4)
+  const binary = atob(padded)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buffer = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buffer).set(bytes);
-  return buffer;
+  const buffer = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(buffer).set(bytes)
+  return buffer
 }
 
 async function sha256Hex(data: Uint8Array): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", toArrayBuffer(data));
+  const hash = await crypto.subtle.digest('SHA-256', toArrayBuffer(data))
   return Array.from(new Uint8Array(hash), (b) =>
-    b.toString(16).padStart(2, "0"),
-  ).join("");
-}
-
-interface DeviceIdentity {
-  deviceId: string;
-  publicKey: string;
-  privateKey: string;
-  cryptoKey: CryptoKey;
+    b.toString(16).padStart(2, '0')
+  ).join('')
 }
 
 async function getOrCreateDeviceIdentity(
   loadData: () => Promise<Record<string, unknown> | null>,
-  saveData: (data: Record<string, unknown>) => Promise<void>,
+  saveData: (data: Record<string, unknown>) => Promise<void>
 ): Promise<DeviceIdentity> {
-  const data = await loadData();
-  const deviceId = typeof data?.deviceId === "string" ? data.deviceId : null;
+  const data = await loadData()
+  const deviceId = typeof data?.deviceId === 'string' ? data.deviceId : null
   const devicePublicKey =
-    typeof data?.devicePublicKey === "string" ? data.devicePublicKey : null;
+    typeof data?.devicePublicKey === 'string' ? data.devicePublicKey : null
   const devicePrivateKey =
-    typeof data?.devicePrivateKey === "string" ? data.devicePrivateKey : null;
+    typeof data?.devicePrivateKey === 'string' ? data.devicePrivateKey : null
   if (deviceId && devicePublicKey && devicePrivateKey) {
     // Restore existing identity
-    const privBytes = fromBase64Url(devicePrivateKey);
+    const privBytes = fromBase64Url(devicePrivateKey)
     const cryptoKey = await crypto.subtle.importKey(
-      "pkcs8",
+      'pkcs8',
       toArrayBuffer(privBytes),
-      { name: "Ed25519" },
+      { name: 'Ed25519' },
       false,
-      ["sign"],
-    );
+      ['sign']
+    )
     return {
       deviceId,
       publicKey: devicePublicKey,
       privateKey: devicePrivateKey,
       cryptoKey,
-    };
+    }
   }
 
   // Generate new Ed25519 keypair
-  const keyPair = await crypto.subtle.generateKey("Ed25519", true, [
-    "sign",
-    "verify",
-  ]);
+  const keyPair = await crypto.subtle.generateKey('Ed25519', true, [
+    'sign',
+    'verify',
+  ])
   const pubRaw = new Uint8Array(
-    await crypto.subtle.exportKey("raw", keyPair.publicKey),
-  );
+    await crypto.subtle.exportKey('raw', keyPair.publicKey)
+  )
   const privPkcs8 = new Uint8Array(
-    await crypto.subtle.exportKey("pkcs8", keyPair.privateKey),
-  );
-  const newDeviceId = await sha256Hex(pubRaw);
-  const publicKey = toBase64Url(pubRaw);
-  const privateKey = toBase64Url(privPkcs8);
+    await crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
+  )
+  const newDeviceId = await sha256Hex(pubRaw)
+  const publicKey = toBase64Url(pubRaw)
+  const privateKey = toBase64Url(privPkcs8)
 
   // Save to plugin data
-  const existing = (await loadData()) ?? {};
-  existing.deviceId = newDeviceId;
-  existing.devicePublicKey = publicKey;
-  existing.devicePrivateKey = privateKey;
-  await saveData(existing);
+  const existing = (await loadData()) ?? {}
+  existing.deviceId = newDeviceId
+  existing.devicePublicKey = publicKey
+  existing.devicePrivateKey = privateKey
+  await saveData(existing)
 
   return {
     deviceId: newDeviceId,
     publicKey,
     privateKey,
     cryptoKey: keyPair.privateKey,
-  };
+  }
 }
 
 async function signDevicePayload(
   identity: DeviceIdentity,
-  payload: string,
+  payload: string
 ): Promise<string> {
-  const encoded = new TextEncoder().encode(payload);
-  let cryptoKey = identity.cryptoKey;
+  const encoded = new TextEncoder().encode(payload)
+  let cryptoKey = identity.cryptoKey
   // If cryptoKey doesn't have sign usage, re-import
   if (!cryptoKey) {
-    const privBytes = fromBase64Url(identity.privateKey);
+    const privBytes = fromBase64Url(identity.privateKey)
     cryptoKey = await crypto.subtle.importKey(
-      "pkcs8",
+      'pkcs8',
       toArrayBuffer(privBytes),
-      { name: "Ed25519" },
+      { name: 'Ed25519' },
       false,
-      ["sign"],
-    );
+      ['sign']
+    )
   }
-  const sig = await crypto.subtle.sign("Ed25519", cryptoKey, encoded);
-  return toBase64Url(new Uint8Array(sig));
+  const sig = await crypto.subtle.sign('Ed25519', cryptoKey, encoded)
+  return toBase64Url(new Uint8Array(sig))
 }
 
 function buildSignaturePayload(params: {
-  deviceId: string;
-  clientId: string;
-  clientMode: string;
-  role: string;
-  scopes: string[];
-  signedAtMs: number;
-  token: string | null;
-  nonce: string | null;
+  deviceId: string
+  clientId: string
+  clientMode: string
+  role: string
+  scopes: string[]
+  signedAtMs: number
+  token: string | null
+  nonce: string | null
 }): string {
-  const version = params.nonce ? "v2" : "v1";
+  const version = params.nonce ? 'v2' : 'v1'
   const parts = [
     version,
     params.deviceId,
     params.clientId,
     params.clientMode,
     params.role,
-    params.scopes.join(","),
+    params.scopes.join(','),
     String(params.signedAtMs),
-    params.token ?? "",
-  ];
-  if (version === "v2") parts.push(params.nonce ?? "");
-  return parts.join("|");
-}
-
-// ─── Gateway Types ───────────────────────────────────────────────────
-
-interface GatewayPayload {
-  [key: string]: unknown;
-}
-
-interface GatewayMessage {
-  type: string;
-  id?: string;
-  event?: string;
-  payload?: GatewayPayload;
-  ok?: boolean;
-  error?: { message?: string };
-  seq?: number;
-}
-
-interface SessionInfo {
-  key: string;
-  label?: string;
-  displayName?: string;
-  model?: string;
-  totalTokens?: number;
-  contextTokens?: number;
-  createdAt?: number;
-  updatedAt?: number;
-  thinkingLevel?: string;
-  verboseLevel?: string;
-  thinkingDefault?: string;
-  verboseDefault?: string;
-}
-
-interface AgentListItem {
-  id?: string;
-  name?: string;
-}
-
-interface ModelInfo {
-  id: string;
-  name?: string;
-  provider: string;
-}
-
-interface ContentBlock {
-  type: string;
-  text?: string;
-  content?: string | ContentBlock[];
-  name?: string;
-  input?: Record<string, unknown>;
-  arguments?: Record<string, unknown>;
-  image_url?: { url: string };
-}
-
-interface HistoryMessage {
-  role: string;
-  content: string | ContentBlock[];
-  timestamp?: number;
-}
-
-// ─── Gateway Client ──────────────────────────────────────────────────
-
-type GatewayEventHandler = (event: {
-  event: string;
-  payload: GatewayPayload;
-  seq?: number;
-}) => void;
-type GatewayHelloHandler = (payload: GatewayPayload) => void;
-type GatewayCloseHandler = (info: { code: number; reason: string }) => void;
-type GatewayConnectErrorHandler = (message: string) => void;
-
-interface GatewayClientOpts {
-  url: string;
-  token?: string;
-  deviceIdentity?: DeviceIdentity;
-  onEvent?: GatewayEventHandler;
-  onHello?: GatewayHelloHandler;
-  onClose?: GatewayCloseHandler;
-  onConnectError?: GatewayConnectErrorHandler;
+    params.token ?? '',
+  ]
+  if (version === 'v2') parts.push(params.nonce ?? '')
+  return parts.join('|')
 }
 
 function generateId(): string {
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+  const arr = new Uint8Array(16)
+  crypto.getRandomValues(arr)
+  return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
@@ -329,165 +235,165 @@ function generateId(): string {
 async function deleteSessionWithFallback(
   gateway: GatewayClient,
   key: string,
-  deleteTranscript = true,
+  deleteTranscript = true
 ): Promise<boolean> {
-  const result = (await gateway.request("sessions.delete", {
+  const result = (await gateway.request('sessions.delete', {
     key,
     deleteTranscript,
-  })) as { deleted?: boolean } | null;
-  if (result?.deleted) return true;
+  })) as { deleted?: boolean } | null
+  if (result?.deleted) return true
 
   // Fallback: strip agent:<id>: prefix and retry with raw key
-  const match = key.match(/^agent:[^:]+:(.+)$/);
+  const match = key.match(/^agent:[^:]+:(.+)$/)
   if (match) {
-    const rawKey = match[1];
-    const retry = (await gateway.request("sessions.delete", {
+    const rawKey = match[1]
+    const retry = (await gateway.request('sessions.delete', {
       key: rawKey,
       deleteTranscript,
-    })) as { deleted?: boolean } | null;
-    return !!retry?.deleted;
+    })) as { deleted?: boolean } | null
+    return !!retry?.deleted
   }
-  return false;
+  return false
 }
 
 class GatewayClient {
-  private ws: WebSocket | null = null;
+  private ws: WebSocket | null = null
   private pending = new Map<
     string,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
-  private closed = false;
-  private connectSent = false;
-  private connectNonce: string | null = null;
-  private backoffMs = 800;
-  private opts: GatewayClientOpts;
-  private connectTimer: number | null = null;
-  private pendingTimeouts = new Map<string, number>();
+  >()
+  private closed = false
+  private connectSent = false
+  private connectNonce: string | null = null
+  private backoffMs = 800
+  private opts: GatewayClientOpts
+  private connectTimer: number | null = null
+  private pendingTimeouts = new Map<string, number>()
 
   constructor(opts: GatewayClientOpts) {
-    this.opts = opts;
+    this.opts = opts
   }
 
   get connected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN;
+    return this.ws?.readyState === WebSocket.OPEN
   }
 
   start(): void {
-    this.closed = false;
-    this.doConnect();
+    this.closed = false
+    this.doConnect()
   }
 
   stop(): void {
-    this.closed = true;
+    this.closed = true
     if (this.connectTimer !== null) {
-      window.clearTimeout(this.connectTimer);
-      this.connectTimer = null;
+      window.clearTimeout(this.connectTimer)
+      this.connectTimer = null
     }
-    for (const [, t] of this.pendingTimeouts) window.clearTimeout(t);
-    this.pendingTimeouts.clear();
-    this.ws?.close();
-    this.ws = null;
-    this.flushPending(new Error("client stopped"));
+    for (const [, t] of this.pendingTimeouts) window.clearTimeout(t)
+    this.pendingTimeouts.clear()
+    this.ws?.close()
+    this.ws = null
+    this.flushPending(new Error('client stopped'))
   }
 
   async request(method: string, params?: unknown): Promise<unknown> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("not connected");
+      throw new Error('not connected')
     }
-    const id = generateId();
-    const msg = { type: "req", id, method, params };
+    const id = generateId()
+    const msg = { type: 'req', id, method, params }
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { resolve, reject })
       // Timeout requests after 30s
       const t = window.setTimeout(() => {
         if (this.pending.has(id)) {
-          this.pending.delete(id);
-          reject(new Error("request timeout"));
+          this.pending.delete(id)
+          reject(new Error('request timeout'))
         }
-      }, 30000);
-      this.pendingTimeouts.set(id, t);
-      this.ws!.send(JSON.stringify(msg));
-    });
+      }, 30000)
+      this.pendingTimeouts.set(id, t)
+      this.ws!.send(JSON.stringify(msg))
+    })
   }
 
   private doConnect(): void {
-    if (this.closed) return;
+    if (this.closed) return
 
     // Normalize and validate URL
-    const url = normalizeGatewayUrl(this.opts.url);
+    const url = normalizeGatewayUrl(this.opts.url)
     if (!url) {
       console.error(
-        "[OcO] Invalid gateway URL: must be a valid ws://, wss://, http://, or https:// URL",
-      );
-      return;
+        '[OcO] Invalid gateway URL: must be a valid ws://, wss://, http://, or https:// URL'
+      )
+      return
     }
 
-    this.ws = new WebSocket(url);
-    this.ws.addEventListener("open", () => this.queueConnect());
-    this.ws.addEventListener("message", (e) => this.handleMessage(str(e.data)));
-    this.ws.addEventListener("close", (e) => {
-      this.ws = null;
-      this.flushPending(new Error(`closed (${e.code})`));
-      this.opts.onClose?.({ code: e.code, reason: e.reason || "" });
-      this.scheduleReconnect();
-    });
-    this.ws.addEventListener("error", () => {});
+    this.ws = new WebSocket(url)
+    this.ws.addEventListener('open', () => this.queueConnect())
+    this.ws.addEventListener('message', (e) => this.handleMessage(str(e.data)))
+    this.ws.addEventListener('close', (e) => {
+      this.ws = null
+      this.flushPending(new Error(`closed (${e.code})`))
+      this.opts.onClose?.({ code: e.code, reason: e.reason || '' })
+      this.scheduleReconnect()
+    })
+    this.ws.addEventListener('error', () => {})
   }
 
   private scheduleReconnect(): void {
-    if (this.closed) return;
-    const delay = this.backoffMs;
-    this.backoffMs = Math.min(this.backoffMs * 1.7, 15000);
-    window.setTimeout(() => this.doConnect(), delay);
+    if (this.closed) return
+    const delay = this.backoffMs
+    this.backoffMs = Math.min(this.backoffMs * 1.7, 15000)
+    window.setTimeout(() => this.doConnect(), delay)
   }
 
   private flushPending(err: Error): void {
     for (const [id, p] of this.pending) {
-      const t = this.pendingTimeouts.get(id);
-      if (t) window.clearTimeout(t);
-      p.reject(err);
+      const t = this.pendingTimeouts.get(id)
+      if (t) window.clearTimeout(t)
+      p.reject(err)
     }
-    this.pending.clear();
-    this.pendingTimeouts.clear();
+    this.pending.clear()
+    this.pendingTimeouts.clear()
   }
 
   private queueConnect(): void {
-    this.connectNonce = null;
-    this.connectSent = false;
-    if (this.connectTimer !== null) window.clearTimeout(this.connectTimer);
-    this.connectTimer = window.setTimeout(() => void this.sendConnect(), 750);
+    this.connectNonce = null
+    this.connectSent = false
+    if (this.connectTimer !== null) window.clearTimeout(this.connectTimer)
+    this.connectTimer = window.setTimeout(() => void this.sendConnect(), 750)
   }
 
   private async sendConnect(): Promise<void> {
-    if (this.connectSent) return;
-    this.connectSent = true;
+    if (this.connectSent) return
+    this.connectSent = true
     if (this.connectTimer !== null) {
-      window.clearTimeout(this.connectTimer);
-      this.connectTimer = null;
+      window.clearTimeout(this.connectTimer)
+      this.connectTimer = null
     }
 
-    const CLIENT_ID = "gateway-client";
-    const CLIENT_MODE = "ui";
-    const ROLE = "operator";
-    const SCOPES = ["operator.admin", "operator.write", "operator.read"];
+    const CLIENT_ID = 'gateway-client'
+    const CLIENT_MODE = 'ui'
+    const ROLE = 'operator'
+    const SCOPES = ['operator.admin', 'operator.write', 'operator.read']
 
-    const auth = this.opts.token ? { token: this.opts.token } : undefined;
+    const auth = this.opts.token ? { token: this.opts.token } : undefined
 
     // Build device fingerprint if identity is available
     let device:
       | {
-          id: string;
-          publicKey: string;
-          signature: string;
-          signedAt: number;
-          nonce?: string;
+          id: string
+          publicKey: string
+          signature: string
+          signedAt: number
+          nonce?: string
         }
-      | undefined = undefined;
-    const identity = this.opts.deviceIdentity;
+      | undefined = undefined
+    const identity = this.opts.deviceIdentity
     if (identity) {
       try {
-        const signedAtMs = Date.now();
-        const nonce = this.connectNonce ?? null;
+        const signedAtMs = Date.now()
+        const nonce = this.connectNonce ?? null
         const payload = buildSignaturePayload({
           deviceId: identity.deviceId,
           clientId: CLIENT_ID,
@@ -497,17 +403,17 @@ class GatewayClient {
           signedAtMs,
           token: this.opts.token ?? null,
           nonce,
-        });
-        const signature = await signDevicePayload(identity, payload);
+        })
+        const signature = await signDevicePayload(identity, payload)
         device = {
           id: identity.deviceId,
           publicKey: identity.publicKey,
           signature,
           signedAt: signedAtMs,
           nonce: nonce ?? undefined,
-        };
+        }
       } catch (e) {
-        console.error("[OcO] Device signing failed:", e);
+        console.error('[OcO] Device signing failed:', e)
       }
     }
 
@@ -516,1033 +422,1021 @@ class GatewayClient {
       maxProtocol: 4,
       client: {
         id: CLIENT_ID,
-        version: "0.1.0",
-        platform: "obsidian",
+        version: '0.1.0',
+        platform: 'obsidian',
         mode: CLIENT_MODE,
       },
       role: ROLE,
       scopes: SCOPES,
       auth,
       device,
-      caps: ["tool-events"],
-    };
+      caps: ['tool-events'],
+    }
 
-    void this.request("connect", params)
+    void this.request('connect', params)
       .then((payload) => {
-        this.backoffMs = 800;
-        this.opts.onHello?.(payload as GatewayPayload);
+        this.backoffMs = 800
+        this.opts.onHello?.(payload as GatewayPayload)
       })
       .catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        this.opts.onConnectError?.(message);
-        this.ws?.close(4008, message.slice(0, 120) || "connect failed");
-      });
+        const message = err instanceof Error ? err.message : String(err)
+        this.opts.onConnectError?.(message)
+        this.ws?.close(4008, message.slice(0, 120) || 'connect failed')
+      })
   }
 
   private handleMessage(raw: string): void {
-    let msg: GatewayMessage;
+    let msg: GatewayMessage
     try {
-      msg = JSON.parse(raw) as GatewayMessage;
+      msg = JSON.parse(raw) as GatewayMessage
     } catch {
-      return;
+      return
     }
 
-    if (msg.type === "event") {
-      if (msg.event === "connect.challenge") {
-        const nonce = msg.payload?.nonce;
-        if (typeof nonce === "string") {
-          this.connectNonce = nonce;
-          void this.sendConnect();
+    if (msg.type === 'event') {
+      if (msg.event === 'connect.challenge') {
+        const nonce = msg.payload?.nonce
+        if (typeof nonce === 'string') {
+          this.connectNonce = nonce
+          void this.sendConnect()
         }
-        return;
+        return
       }
       if (msg.event)
         this.opts.onEvent?.({
           event: msg.event,
           payload: msg.payload ?? {},
           seq: msg.seq,
-        });
-      return;
+        })
+      return
     }
 
-    if (msg.type === "res") {
-      const msgId = msg.id ?? "";
-      const p = this.pending.get(msgId);
-      if (!p) return;
-      this.pending.delete(msgId);
-      const t = this.pendingTimeouts.get(msgId);
+    if (msg.type === 'res') {
+      const msgId = msg.id ?? ''
+      const p = this.pending.get(msgId)
+      if (!p) return
+      this.pending.delete(msgId)
+      const t = this.pendingTimeouts.get(msgId)
       if (t) {
-        window.clearTimeout(t);
-        this.pendingTimeouts.delete(msgId);
+        window.clearTimeout(t)
+        this.pendingTimeouts.delete(msgId)
       }
       if (msg.ok) {
-        p.resolve(msg.payload);
+        p.resolve(msg.payload)
       } else {
-        p.reject(new Error(msg.error?.message ?? "request failed"));
+        p.reject(new Error(msg.error?.message ?? 'request failed'))
       }
     }
   }
-}
-
-// ─── Chat Message Types ──────────────────────────────────────────────
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  text: string;
-  images: string[]; // data URIs or URLs
-  timestamp: number;
-  contentBlocks?: ContentBlock[]; // raw content array from history (preserves tool_use interleaving)
-  voiceRefs?: string[]; // VOICE:filename.b64 refs for audio playback via gateway
 }
 
 // ─── Onboarding Modal ────────────────────────────────────────────────
 
 class OnboardingModal extends Modal {
-  plugin: OpenClawPlugin;
-  private step = 0;
-  private path: "fresh" | "existing" | null = null;
-  private statusEl: HTMLElement | null = null;
-  private pairingPollTimer: number | null = null;
+  plugin: OpenClawPlugin
+  private step = 0
+  private path: 'fresh' | 'existing' | null = null
+  private statusEl: HTMLElement | null = null
+  private pairingPollTimer: number | null = null
 
   // Setup state for fresh install path
   private setupKeys = {
-    claude1: "",
-    claude2: "",
-    googleai: "",
-    brave: "",
-    elevenlabs: "",
-  };
+    claude1: '',
+    claude2: '',
+    googleai: '',
+    brave: '',
+    elevenlabs: '',
+  }
   private setupBots: { name: string; model: string }[] = [
-    { name: "Assistant", model: "anthropic/claude-sonnet-4-6" },
-  ];
+    { name: 'Assistant', model: 'anthropic/claude-sonnet-4-6' },
+  ]
 
   private static MODELS = [
-    { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4" },
-    { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4" },
-    { id: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-    { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  ];
+    { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4' },
+    { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
+    { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+    { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  ]
 
   constructor(app: App, plugin: OpenClawPlugin) {
-    super(app);
-    this.plugin = plugin;
+    super(app)
+    this.plugin = plugin
   }
 
   onOpen(): void {
-    this.modalEl.addClass("openclaw-onboarding");
-    this.renderStep();
+    this.modalEl.addClass('openclaw-onboarding')
+    this.renderStep()
   }
 
   onClose(): void {
     if (this.pairingPollTimer) {
-      window.clearInterval(this.pairingPollTimer);
-      this.pairingPollTimer = null;
+      window.clearInterval(this.pairingPollTimer)
+      this.pairingPollTimer = null
     }
   }
 
   /** Safely render simple HTML (text, <a>, <code>, <strong>) into an element using DOM API */
   private setRichText(el: HTMLElement, html: string): void {
-    el.empty();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(`<span>${html}</span>`, "text/html");
-    const source = doc.body.firstElementChild;
+    el.empty()
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(`<span>${html}</span>`, 'text/html')
+    const source = doc.body.firstElementChild
     if (!source) {
-      el.setText(html);
-      return;
+      el.setText(html)
+      return
     }
     for (const node of Array.from(source.childNodes)) {
       if (node.nodeType === Node.TEXT_NODE) {
-        el.appendText(node.textContent ?? "");
+        el.appendText(node.textContent ?? '')
       } else if (node.instanceOf(HTMLElement)) {
-        const tag = node.tagName.toLowerCase();
-        if (tag === "a") {
-          el.createEl("a", {
-            text: node.textContent ?? "",
-            href: node.getAttribute("href") ?? "",
-          });
-        } else if (tag === "code") {
-          el.createEl("code", { text: node.textContent ?? "" });
-        } else if (tag === "strong") {
-          el.createEl("strong", { text: node.textContent ?? "" });
+        const tag = node.tagName.toLowerCase()
+        if (tag === 'a') {
+          el.createEl('a', {
+            text: node.textContent ?? '',
+            href: node.getAttribute('href') ?? '',
+          })
+        } else if (tag === 'code') {
+          el.createEl('code', { text: node.textContent ?? '' })
+        } else if (tag === 'strong') {
+          el.createEl('strong', { text: node.textContent ?? '' })
         } else {
-          el.appendText(node.textContent ?? "");
+          el.appendText(node.textContent ?? '')
         }
       }
     }
   }
 
   private renderStep(): void {
-    const { contentEl } = this;
-    contentEl.empty();
-    this.statusEl = null;
+    const { contentEl } = this
+    contentEl.empty()
+    this.statusEl = null
 
     // Step indicator — adapts to path
     const stepLabels =
-      this.path === "fresh"
-        ? ["Start", "Keys", "Bots", "Install", "Connect", "Pair", "Done"]
-        : this.path === "existing"
-          ? ["Start", "Connect", "Pair", "Done"]
-          : ["Start"];
-    const indicator = contentEl.createDiv("openclaw-onboard-steps");
+      this.path === 'fresh'
+        ? ['Start', 'Keys', 'Bots', 'Install', 'Connect', 'Pair', 'Done']
+        : this.path === 'existing'
+          ? ['Start', 'Connect', 'Pair', 'Done']
+          : ['Start']
+    const indicator = contentEl.createDiv('openclaw-onboard-steps')
     stepLabels.forEach((_label, i) => {
       const dot = indicator.createSpan(
-        "openclaw-step-dot" +
-          (i === this.step ? " active" : i < this.step ? " done" : ""),
-      );
-      dot.textContent = i < this.step ? "✓" : String(i + 1);
+        'openclaw-step-dot' +
+          (i === this.step ? ' active' : i < this.step ? ' done' : '')
+      )
+      dot.textContent = i < this.step ? '✓' : String(i + 1)
       if (i < stepLabels.length - 1)
         indicator.createSpan(
-          "openclaw-step-line" + (i < this.step ? " done" : ""),
-        );
-    });
+          'openclaw-step-line' + (i < this.step ? ' done' : '')
+        )
+    })
 
     // Route to correct step renderer
-    if (this.step === 0) return this.renderWelcome(contentEl);
+    if (this.step === 0) return this.renderWelcome(contentEl)
 
-    if (this.path === "fresh") {
-      if (this.step === 1) return this.renderKeys(contentEl);
-      if (this.step === 2) return this.renderBots(contentEl);
-      if (this.step === 3) return this.renderInstallCmd(contentEl);
-      if (this.step === 4) return this.renderConnect(contentEl);
-      if (this.step === 5) return this.renderPairing(contentEl);
-      if (this.step === 6) return this.renderDone(contentEl);
+    if (this.path === 'fresh') {
+      if (this.step === 1) return this.renderKeys(contentEl)
+      if (this.step === 2) return this.renderBots(contentEl)
+      if (this.step === 3) return this.renderInstallCmd(contentEl)
+      if (this.step === 4) return this.renderConnect(contentEl)
+      if (this.step === 5) return this.renderPairing(contentEl)
+      if (this.step === 6) return this.renderDone(contentEl)
     } else {
-      if (this.step === 1) return this.renderConnect(contentEl);
-      if (this.step === 2) return this.renderPairing(contentEl);
-      if (this.step === 3) return this.renderDone(contentEl);
+      if (this.step === 1) return this.renderConnect(contentEl)
+      if (this.step === 2) return this.renderPairing(contentEl)
+      if (this.step === 3) return this.renderDone(contentEl)
     }
   }
 
   // ─── Step 0: Welcome (branching) ─────────────────────────────────
 
   private renderWelcome(el: HTMLElement): void {
-    el.createEl("h2", { text: "Welcome to OcO" });
-    el.createEl("p", {
+    el.createEl('h2', { text: 'Welcome to OcO' })
+    el.createEl('p', {
       text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace.",
-      cls: "openclaw-onboard-desc",
-    });
+      cls: 'openclaw-onboard-desc',
+    })
 
-    this.renderPatchNotice(el);
+    this.renderPatchNotice(el)
 
     const btnRow = el.createDiv(
-      "openclaw-onboard-buttons openclaw-onboard-buttons-vertical",
-    );
+      'openclaw-onboard-buttons openclaw-onboard-buttons-vertical'
+    )
 
-    const freshBtn = btnRow.createEl("button", {
-      text: "I need to install OpenClaw",
-      cls: "mod-cta openclaw-full-width",
-    });
-    freshBtn.addEventListener("click", () => {
-      this.path = "fresh";
-      this.step = 1;
-      this.renderStep();
-    });
+    const freshBtn = btnRow.createEl('button', {
+      text: 'I need to install OpenClaw',
+      cls: 'mod-cta openclaw-full-width',
+    })
+    freshBtn.addEventListener('click', () => {
+      this.path = 'fresh'
+      this.step = 1
+      this.renderStep()
+    })
 
-    const existBtn = btnRow.createEl("button", {
-      text: "OpenClaw is already running",
-      cls: "openclaw-full-width",
-    });
-    existBtn.addEventListener("click", () => {
-      this.path = "existing";
-      this.step = 1;
-      this.renderStep();
-    });
+    const existBtn = btnRow.createEl('button', {
+      text: 'OpenClaw is already running',
+      cls: 'openclaw-full-width',
+    })
+    existBtn.addEventListener('click', () => {
+      this.path = 'existing'
+      this.step = 1
+      this.renderStep()
+    })
   }
 
   // ─── Required patch notice (shown on welcome + on connect failure) ─
 
   private renderPatchNotice(el: HTMLElement): void {
-    const box = el.createDiv("openclaw-onboard-warn");
-    const head = box.createDiv("openclaw-onboard-warn-head");
-    head.createSpan({ text: "⚠️ ", cls: "openclaw-onboard-warn-icon" });
-    head.createEl("strong", {
-      text: "One-time patch required on your OpenClaw gateway",
-    });
+    const box = el.createDiv('openclaw-onboard-warn')
+    const head = box.createDiv('openclaw-onboard-warn-head')
+    head.createSpan({ text: '⚠️ ', cls: 'openclaw-onboard-warn-icon' })
+    head.createEl('strong', {
+      text: 'One-time patch required on your OpenClaw gateway',
+    })
 
-    const body = box.createDiv("openclaw-onboard-warn-body");
-    body.appendText("Obsidian loads from ");
-    body.createEl("code", { text: "app://obsidian.md" });
+    const body = box.createDiv('openclaw-onboard-warn-body')
+    body.appendText('Obsidian loads from ')
+    body.createEl('code', { text: 'app://obsidian.md' })
     body.appendText(
-      ", which vanilla OpenClaw rejects. A small idempotent script adds the needed origin fallback. ",
-    );
-    body.createEl("strong", { text: "Re-run after every " });
-    body.createEl("code", { text: "openclaw update" });
-    body.createEl("strong", { text: "." });
+      ', which vanilla OpenClaw rejects. A small idempotent script adds the needed origin fallback. '
+    )
+    body.createEl('strong', { text: 'Re-run after every ' })
+    body.createEl('code', { text: 'openclaw update' })
+    body.createEl('strong', { text: '.' })
 
-    const details = box.createEl("details", {
-      cls: "openclaw-onboard-warn-details",
-    });
-    details.createEl("summary", { text: "Show the command" });
+    const details = box.createEl('details', {
+      cls: 'openclaw-onboard-warn-details',
+    })
+    details.createEl('summary', { text: 'Show the command' })
     const cmd =
-      "curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh | sudo bash";
-    this.makeCopyBox(details, cmd);
-    const linkLine = details.createDiv("openclaw-onboard-hint");
-    linkLine.appendText("Review the script first: ");
-    linkLine.createEl("a", {
-      text: "scripts/patch-openclaw.sh",
-      href: "https://github.com/bighill/oco-obsidian-plugin/blob/main/scripts/patch-openclaw.sh",
-    });
+      'curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh | sudo bash'
+    this.makeCopyBox(details, cmd)
+    const linkLine = details.createDiv('openclaw-onboard-hint')
+    linkLine.appendText('Review the script first: ')
+    linkLine.createEl('a', {
+      text: 'scripts/patch-openclaw.sh',
+      href: 'https://github.com/bighill/oco-obsidian-plugin/blob/main/scripts/patch-openclaw.sh',
+    })
   }
 
   // ─── Fresh path: Step 1 — API Keys ───────────────────────────────
 
   private renderKeys(el: HTMLElement): void {
-    el.createEl("h2", { text: "Your API keys" });
-    el.createEl("p", {
+    el.createEl('h2', { text: 'Your API keys' })
+    el.createEl('p', {
       text: "Your bot needs AI model access. Paste your keys below — they'll be included in the install command. Nothing leaves your device.",
-      cls: "openclaw-onboard-desc",
-    });
+      cls: 'openclaw-onboard-desc',
+    })
 
     const fields: {
-      key: keyof typeof this.setupKeys;
-      label: string;
-      required?: boolean;
-      placeholder: string;
-      help: string;
+      key: keyof typeof this.setupKeys
+      label: string
+      required?: boolean
+      placeholder: string
+      help: string
     }[] = [
       {
-        key: "claude1",
-        label: "Claude token",
+        key: 'claude1',
+        label: 'Claude token',
         required: true,
-        placeholder: "sk-ant-...",
+        placeholder: 'sk-ant-...',
         help: "From <a href='https://console.anthropic.com/settings/keys'>console.anthropic.com</a> or Claude Max OAuth",
       },
       {
-        key: "claude2",
-        label: "Claude token #2 (parallel requests)",
-        placeholder: "sk-ant-...",
-        help: "Optional — enables concurrent requests",
+        key: 'claude2',
+        label: 'Claude token #2 (parallel requests)',
+        placeholder: 'sk-ant-...',
+        help: 'Optional — enables concurrent requests',
       },
       {
-        key: "googleai",
-        label: "Google AI API key",
-        placeholder: "AIza...",
+        key: 'googleai',
+        label: 'Google AI API key',
+        placeholder: 'AIza...',
         help: "Free at <a href='https://aistudio.google.com/apikey'>aistudio.google.com</a> — enables Gemini models",
       },
       {
-        key: "brave",
-        label: "Brave Search API key",
-        placeholder: "BSA...",
+        key: 'brave',
+        label: 'Brave Search API key',
+        placeholder: 'BSA...',
         help: "Free at <a href='https://brave.com/search/api/'>brave.com/search/api</a> — web search",
       },
       {
-        key: "elevenlabs",
-        label: "ElevenLabs API key",
-        placeholder: "sk_...",
+        key: 'elevenlabs',
+        label: 'ElevenLabs API key',
+        placeholder: 'sk_...',
         help: "Free at <a href='https://elevenlabs.io'>elevenlabs.io</a> — voice/TTS",
       },
-    ];
+    ]
 
     for (const f of fields) {
-      const group = el.createDiv("openclaw-onboard-field");
-      const label = group.createEl("label", { text: f.label });
+      const group = el.createDiv('openclaw-onboard-field')
+      const label = group.createEl('label', { text: f.label })
       if (f.required) {
-        const req = label.createSpan({ cls: "oc-req-label" });
-        req.textContent = " (required)";
+        const req = label.createSpan({ cls: 'oc-req-label' })
+        req.textContent = ' (required)'
       }
-      const fKey = f.key as keyof typeof this.setupKeys;
-      const input = group.createEl("input", {
-        type: "password",
+      const fKey = f.key as keyof typeof this.setupKeys
+      const input = group.createEl('input', {
+        type: 'password',
         value: this.setupKeys[fKey],
         placeholder: f.placeholder,
-        cls: "openclaw-onboard-input",
-      });
-      input.addEventListener("input", () => {
-        this.setupKeys[fKey] = input.value.trim();
-      });
-      const help = group.createDiv("openclaw-onboard-hint");
-      this.setRichText(help, f.help);
+        cls: 'openclaw-onboard-input',
+      })
+      input.addEventListener('input', () => {
+        this.setupKeys[fKey] = input.value.trim()
+      })
+      const help = group.createDiv('openclaw-onboard-hint')
+      this.setRichText(help, f.help)
     }
 
-    const note = el.createDiv("openclaw-onboard-info");
+    const note = el.createDiv('openclaw-onboard-info')
     note.setText(
-      "🔒 Keys stay on your device. The install command runs entirely on your server.",
-    );
+      '🔒 Keys stay on your device. The install command runs entirely on your server.'
+    )
 
-    this.statusEl = el.createDiv("openclaw-onboard-status");
+    this.statusEl = el.createDiv('openclaw-onboard-status')
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    const btnRow = el.createDiv('openclaw-onboard-buttons')
     btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        this.step = 0;
-        this.path = null;
-        this.renderStep();
-      });
-    const nextBtn = btnRow.createEl("button", {
-      text: "Next →",
-      cls: "mod-cta",
-    });
-    nextBtn.addEventListener("click", () => {
+      .createEl('button', { text: '← back' })
+      .addEventListener('click', () => {
+        this.step = 0
+        this.path = null
+        this.renderStep()
+      })
+    const nextBtn = btnRow.createEl('button', {
+      text: 'Next →',
+      cls: 'mod-cta',
+    })
+    nextBtn.addEventListener('click', () => {
       if (!this.setupKeys.claude1) {
-        this.showStatus("Claude token is required", "error");
-        return;
+        this.showStatus('Claude token is required', 'error')
+        return
       }
-      this.step = 2;
-      this.renderStep();
-    });
+      this.step = 2
+      this.renderStep()
+    })
   }
 
   // ─── Fresh path: Step 2 — Bot config ─────────────────────────────
 
   private renderBots(el: HTMLElement): void {
-    el.createEl("h2", { text: "Configure your bots" });
-    el.createEl("p", {
-      text: "Each bot gets its own personality, memory, and workspace folder.",
-      cls: "openclaw-onboard-desc",
-    });
+    el.createEl('h2', { text: 'Configure your bots' })
+    el.createEl('p', {
+      text: 'Each bot gets its own personality, memory, and workspace folder.',
+      cls: 'openclaw-onboard-desc',
+    })
 
-    const listEl = el.createDiv();
+    const listEl = el.createDiv()
     this.setupBots.forEach((bot, i) => {
-      const card = listEl.createDiv("openclaw-onboard-bot-card");
-      const row = card.createDiv("openclaw-onboard-bot-row");
-      const nameInput = row.createEl("input", {
-        type: "text",
+      const card = listEl.createDiv('openclaw-onboard-bot-card')
+      const row = card.createDiv('openclaw-onboard-bot-row')
+      const nameInput = row.createEl('input', {
+        type: 'text',
         value: bot.name,
-        placeholder: "Bot name",
-        cls: "openclaw-onboard-input oc-name-input",
-      });
-      nameInput.addEventListener("input", () => {
-        bot.name = nameInput.value;
-      });
+        placeholder: 'Bot name',
+        cls: 'openclaw-onboard-input oc-name-input',
+      })
+      nameInput.addEventListener('input', () => {
+        bot.name = nameInput.value
+      })
 
-      const select = row.createEl("select", {
-        cls: "openclaw-onboard-input oc-select-inline",
-      });
+      const select = row.createEl('select', {
+        cls: 'openclaw-onboard-input oc-select-inline',
+      })
       for (const m of OnboardingModal.MODELS) {
-        const opt = select.createEl("option", { text: m.label, value: m.id });
-        if (m.id === bot.model) opt.selected = true;
+        const opt = select.createEl('option', { text: m.label, value: m.id })
+        if (m.id === bot.model) opt.selected = true
       }
-      select.addEventListener("change", () => {
-        bot.model = select.value;
-      });
+      select.addEventListener('change', () => {
+        bot.model = select.value
+      })
 
       if (this.setupBots.length > 1) {
-        const removeBtn = row.createSpan({ text: "×", cls: "oc-remove-btn" });
-        removeBtn.addEventListener("click", () => {
-          this.setupBots.splice(i, 1);
-          this.renderStep();
-        });
+        const removeBtn = row.createSpan({ text: '×', cls: 'oc-remove-btn' })
+        removeBtn.addEventListener('click', () => {
+          this.setupBots.splice(i, 1)
+          this.renderStep()
+        })
       }
-    });
+    })
 
-    const addBtn = el.createEl("button", {
-      text: "+ add another bot",
-      cls: "oc-add-bot-btn",
-    });
-    addBtn.addEventListener("click", () => {
-      this.setupBots.push({ name: "", model: "anthropic/claude-sonnet-4-6" });
-      this.renderStep();
-    });
+    const addBtn = el.createEl('button', {
+      text: '+ add another bot',
+      cls: 'oc-add-bot-btn',
+    })
+    addBtn.addEventListener('click', () => {
+      this.setupBots.push({ name: '', model: 'anthropic/claude-sonnet-4-6' })
+      this.renderStep()
+    })
 
-    const note = el.createDiv("openclaw-onboard-hint oc-margin-top");
-    note.createSpan({ text: "Each bot gets a folder like " });
-    note.createEl("code", { text: "AGENT-YOURBOT/" });
-    note.createSpan({ text: " in your vault." });
+    const note = el.createDiv('openclaw-onboard-hint oc-margin-top')
+    note.createSpan({ text: 'Each bot gets a folder like ' })
+    note.createEl('code', { text: 'AGENT-YOURBOT/' })
+    note.createSpan({ text: ' in your vault.' })
 
-    this.statusEl = el.createDiv("openclaw-onboard-status");
+    this.statusEl = el.createDiv('openclaw-onboard-status')
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    const btnRow = el.createDiv('openclaw-onboard-buttons')
     btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        this.step = 1;
-        this.renderStep();
-      });
-    const nextBtn = btnRow.createEl("button", {
-      text: "Generate install command →",
-      cls: "mod-cta",
-    });
-    nextBtn.addEventListener("click", () => {
-      this.step = 3;
-      this.renderStep();
-    });
+      .createEl('button', { text: '← back' })
+      .addEventListener('click', () => {
+        this.step = 1
+        this.renderStep()
+      })
+    const nextBtn = btnRow.createEl('button', {
+      text: 'Generate install command →',
+      cls: 'mod-cta',
+    })
+    nextBtn.addEventListener('click', () => {
+      this.step = 3
+      this.renderStep()
+    })
   }
 
   // ─── Fresh path: Step 3 — Install command ────────────────────────
 
   private renderInstallCmd(el: HTMLElement): void {
-    el.createEl("h2", { text: "Install OpenClaw" });
-    el.createEl("p", {
-      text: "Open a terminal on your server (Mac: Cmd+Space → Terminal, cloud: ssh in). Run this command:",
-      cls: "openclaw-onboard-desc",
-    });
+    el.createEl('h2', { text: 'Install OpenClaw' })
+    el.createEl('p', {
+      text: 'Open a terminal on your server (Mac: Cmd+Space → Terminal, cloud: ssh in). Run this command:',
+      cls: 'openclaw-onboard-desc',
+    })
 
-    const config = this.generateConfig();
-    const configJson = JSON.stringify(config, null, 2);
+    const config = this.generateConfig()
+    const configJson = JSON.stringify(config, null, 2)
     const configB64 = btoa(
       Array.from(new TextEncoder().encode(configJson), (b) =>
-        String.fromCharCode(b),
-      ).join(""),
-    );
-    const installCmd = `curl -fsSL https://openclaw.ai/install.sh | bash && echo '${configB64}' | base64 -d > ~/.openclaw/openclaw.json && openclaw gateway restart`;
+        String.fromCharCode(b)
+      ).join('')
+    )
+    const installCmd = `curl -fsSL https://openclaw.ai/install.sh | bash && echo '${configB64}' | base64 -d > ~/.openclaw/openclaw.json && openclaw gateway restart`
 
-    this.makeCopyBox(el, installCmd);
+    this.makeCopyBox(el, installCmd)
 
-    el.createEl("p", {
-      text: "This installs OpenClaw, writes your config with all API keys and bot settings, and starts the gateway.",
-      cls: "openclaw-onboard-hint",
-    });
+    el.createEl('p', {
+      text: 'This installs OpenClaw, writes your config with all API keys and bot settings, and starts the gateway.',
+      cls: 'openclaw-onboard-hint',
+    })
 
     // Expandable config preview
-    const details = el.createEl("details", { cls: "oc-margin-top" });
-    details.createEl("summary", {
-      text: "Preview config",
-      cls: "oc-details-summary",
-    });
-    const pre = details.createEl("pre", { cls: "oc-install-pre" });
-    pre.textContent = JSON.stringify(config, null, 2);
+    const details = el.createEl('details', { cls: 'oc-margin-top' })
+    details.createEl('summary', {
+      text: 'Preview config',
+      cls: 'oc-details-summary',
+    })
+    const pre = details.createEl('pre', { cls: 'oc-install-pre' })
+    pre.textContent = JSON.stringify(config, null, 2)
 
-    el.createEl("p", {
-      text: "The gateway will be available locally at ws://127.0.0.1:18789.",
-      cls: "openclaw-onboard-hint",
-    });
+    el.createEl('p', {
+      text: 'The gateway will be available locally at ws://127.0.0.1:18789.',
+      cls: 'openclaw-onboard-hint',
+    })
 
-    this.statusEl = el.createDiv("openclaw-onboard-status");
+    this.statusEl = el.createDiv('openclaw-onboard-status')
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    const btnRow = el.createDiv('openclaw-onboard-buttons')
     btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        this.step = 2;
-        this.renderStep();
-      });
-    const nextBtn = btnRow.createEl("button", {
-      text: "OpenClaw is running →",
-      cls: "mod-cta",
-    });
-    nextBtn.addEventListener("click", () => {
-      this.step = 4;
-      this.renderStep();
-    });
+      .createEl('button', { text: '← back' })
+      .addEventListener('click', () => {
+        this.step = 2
+        this.renderStep()
+      })
+    const nextBtn = btnRow.createEl('button', {
+      text: 'OpenClaw is running →',
+      cls: 'mod-cta',
+    })
+    nextBtn.addEventListener('click', () => {
+      this.step = 4
+      this.renderStep()
+    })
   }
 
   private generateConfig(): Record<string, unknown> {
     const auth: Record<string, unknown> = {
       profiles: {} as Record<string, unknown>,
-    };
+    }
     const agents: Record<string, unknown> = {
       defaults: {
         model: {
-          primary: this.setupBots[0]?.model || "anthropic/claude-sonnet-4-6",
+          primary: this.setupBots[0]?.model || 'anthropic/claude-sonnet-4-6',
         },
       },
-    };
+    }
     const config: Record<string, unknown> = {
       auth,
       agents,
       gateway: {
         port: 18789,
-        bind: "loopback",
-        auth: { mode: "token" },
+        bind: 'loopback',
+        auth: { mode: 'token' },
       },
-    };
-    const profiles = auth.profiles as Record<string, unknown>;
+    }
+    const profiles = auth.profiles as Record<string, unknown>
     if (this.setupKeys.claude1)
-      profiles["anthropic:default"] = { provider: "anthropic", mode: "token" };
+      profiles['anthropic:default'] = { provider: 'anthropic', mode: 'token' }
     if (this.setupKeys.claude2)
-      profiles["anthropic:secondary"] = {
-        provider: "anthropic",
-        mode: "token",
-      };
+      profiles['anthropic:secondary'] = {
+        provider: 'anthropic',
+        mode: 'token',
+      }
     if (this.setupKeys.googleai)
-      profiles["google:default"] = { provider: "google", mode: "api_key" };
+      profiles['google:default'] = { provider: 'google', mode: 'api_key' }
     if (this.setupKeys.brave)
-      config.tools = { web: { search: { apiKey: this.setupKeys.brave } } };
+      config.tools = { web: { search: { apiKey: this.setupKeys.brave } } }
     if (this.setupKeys.elevenlabs)
       config.messages = {
         tts: {
-          provider: "elevenlabs",
+          provider: 'elevenlabs',
           elevenlabs: { apiKey: this.setupKeys.elevenlabs },
         },
-      };
+      }
     if (this.setupBots.length > 1) {
       agents.list = this.setupBots.map((bot, i) => {
         const id =
           i === 0
-            ? "main"
-            : bot.name.toLowerCase().replace(/[^a-z0-9]/g, "-") || `bot-${i}`;
+            ? 'main'
+            : bot.name.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bot-${i}`
         const folder =
-          "AGENT-" +
-          (bot.name || "BOT").toUpperCase().replace(/[^A-Z0-9]/g, "-");
+          'AGENT-' +
+          (bot.name || 'BOT').toUpperCase().replace(/[^A-Z0-9]/g, '-')
         return {
           id,
           name: bot.name || `Bot ${i + 1}`,
           workspace: `~/.openclaw/workspace/${folder}`,
-        };
-      });
+        }
+      })
     } else if (this.setupBots[0]?.name) {
       const folder =
-        "AGENT-" +
-        this.setupBots[0].name.toUpperCase().replace(/[^A-Z0-9]/g, "-");
-      (agents.defaults as Record<string, unknown>).workspace =
-        `~/.openclaw/workspace/${folder}`;
+        'AGENT-' +
+        this.setupBots[0].name.toUpperCase().replace(/[^A-Z0-9]/g, '-')
+      ;(agents.defaults as Record<string, unknown>).workspace =
+        `~/.openclaw/workspace/${folder}`
     }
-    return config;
+    return config
   }
 
   // ─── Step 3: Connect ─────────────────────────────────────────────
 
   private renderConnect(el: HTMLElement): void {
-    el.createEl("h2", { text: "Connect to your gateway" });
-    el.createEl("p", {
-      text: "Paste the URL and token from the previous step.",
-      cls: "openclaw-onboard-desc",
-    });
+    el.createEl('h2', { text: 'Connect to your gateway' })
+    el.createEl('p', {
+      text: 'Paste the URL and token from the previous step.',
+      cls: 'openclaw-onboard-desc',
+    })
 
     // URL input
-    const urlGroup = el.createDiv("openclaw-onboard-field");
-    urlGroup.createEl("label", { text: "Gateway URL" });
-    const urlInput = urlGroup.createEl("input", {
-      type: "text",
+    const urlGroup = el.createDiv('openclaw-onboard-field')
+    urlGroup.createEl('label', { text: 'Gateway URL' })
+    const urlInput = urlGroup.createEl('input', {
+      type: 'text',
       value:
         this.plugin.settings.gatewayUrl ||
-        (this.path === "existing" ? "ws://127.0.0.1:18789" : ""),
-      placeholder: "ws://127.0.0.1:18789",
-      cls: "openclaw-onboard-input",
-    });
-    const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.appendText("Usually ");
-    urlHint.createEl("code", { text: "ws://127.0.0.1:18789" });
-    urlHint.appendText(" unless you changed the port. You can paste ");
-    urlHint.createEl("code", { text: "https://" });
-    urlHint.appendText(" or ");
-    urlHint.createEl("code", { text: "wss://" });
-    urlHint.appendText(" — both work.");
+        (this.path === 'existing' ? 'ws://127.0.0.1:18789' : ''),
+      placeholder: 'ws://127.0.0.1:18789',
+      cls: 'openclaw-onboard-input',
+    })
+    const urlHint = urlGroup.createDiv('openclaw-onboard-hint')
+    urlHint.appendText('Usually ')
+    urlHint.createEl('code', { text: 'ws://127.0.0.1:18789' })
+    urlHint.appendText(' unless you changed the port. You can paste ')
+    urlHint.createEl('code', { text: 'https://' })
+    urlHint.appendText(' or ')
+    urlHint.createEl('code', { text: 'wss://' })
+    urlHint.appendText(' — both work.')
 
     // Token input
-    const tokenGroup = el.createDiv("openclaw-onboard-field");
-    tokenGroup.createEl("label", { text: "Auth token" });
-    const tokenInput = tokenGroup.createEl("input", {
-      type: "password",
-      value: this.plugin.settings.token || "",
-      placeholder: "Paste your gateway auth token",
-      cls: "openclaw-onboard-input",
-    });
+    const tokenGroup = el.createDiv('openclaw-onboard-field')
+    tokenGroup.createEl('label', { text: 'Auth token' })
+    const tokenInput = tokenGroup.createEl('input', {
+      type: 'password',
+      value: this.plugin.settings.token || '',
+      placeholder: 'Paste your gateway auth token',
+      cls: 'openclaw-onboard-input',
+    })
 
-    this.statusEl = el.createDiv("openclaw-onboard-status");
+    this.statusEl = el.createDiv('openclaw-onboard-status')
 
     // Troubleshooting (hidden until failure)
-    const troubleshoot = el.createDiv("openclaw-onboard-troubleshoot");
-    troubleshoot.addClass("oc-hidden");
-    troubleshoot.createEl("h3", { text: "Troubleshooting" });
+    const troubleshoot = el.createDiv('openclaw-onboard-troubleshoot')
+    troubleshoot.addClass('oc-hidden')
+    troubleshoot.createEl('h3', { text: 'Troubleshooting' })
 
-    const checks = troubleshoot.createEl("ol", {
-      cls: "openclaw-onboard-list",
-    });
+    const checks = troubleshoot.createEl('ol', {
+      cls: 'openclaw-onboard-list',
+    })
 
-    const li1 = checks.createEl("li");
-    li1.setText("Is the gateway running? On the gateway machine, run:");
+    const li1 = checks.createEl('li')
+    li1.setText('Is the gateway running? On the gateway machine, run:')
     this.makeCopyBox(
       troubleshoot,
-      "openclaw doctor --fix && openclaw gateway restart",
-    );
+      'openclaw doctor --fix && openclaw gateway restart'
+    )
 
-    const li2 = checks.createEl("li");
-    li2.setText("Is it listening on localhost? Run:");
-    this.makeCopyBox(troubleshoot, "curl -fsSL http://127.0.0.1:18789/health");
-    const healthHint = troubleshoot.createDiv("openclaw-onboard-hint");
-    healthHint.setText("You should see JSON output. If you get 'Connection refused', the gateway isn't started.");
+    const li2 = checks.createEl('li')
+    li2.setText('Is it listening on localhost? Run:')
+    this.makeCopyBox(troubleshoot, 'curl -fsSL http://127.0.0.1:18789/health')
+    const healthHint = troubleshoot.createDiv('openclaw-onboard-hint')
+    healthHint.setText(
+      "You should see JSON output. If you get 'Connection refused', the gateway isn't started."
+    )
 
-    const li3 = checks.createEl("li");
-    li3.createEl("strong", { text: "Port conflict?" });
-    li3.appendText(" Check if another process is using port 18789:");
-    this.makeCopyBox(troubleshoot, "lsof -i :18789");
+    const li3 = checks.createEl('li')
+    li3.createEl('strong', { text: 'Port conflict?' })
+    li3.appendText(' Check if another process is using port 18789:')
+    this.makeCopyBox(troubleshoot, 'lsof -i :18789')
 
-    const li4 = checks.createEl("li");
-    li4.createEl("strong", { text: "Gateway config broken?" });
-    li4.appendText(" If ");
-    li4.createEl("code", { text: "openclaw doctor" });
+    const li4 = checks.createEl('li')
+    li4.createEl('strong', { text: 'Gateway config broken?' })
+    li4.appendText(' If ')
+    li4.createEl('code', { text: 'openclaw doctor' })
     li4.appendText(
       ' shows "Invalid config" errors, reset the bind address and restart:'
-    );
+    )
     this.makeCopyBox(
       troubleshoot,
-      "openclaw config set gateway.bind loopback && openclaw gateway restart",
-    );
+      'openclaw config set gateway.bind loopback && openclaw gateway restart'
+    )
 
-    const li5 = checks.createEl("li");
-    li5.createEl("strong", { text: "Still stuck?" });
+    const li5 = checks.createEl('li')
+    li5.createEl('strong', { text: 'Still stuck?' })
     li5.appendText(
-      " Try rebooting the gateway machine. Localhost bindings survive most restarts cleanly."
-    );
+      ' Try rebooting the gateway machine. Localhost bindings survive most restarts cleanly.'
+    )
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    const btnRow = el.createDiv('openclaw-onboard-buttons')
     btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        if (this.path === "existing") {
-          this.step = 0;
-          this.path = null;
+      .createEl('button', { text: '← back' })
+      .addEventListener('click', () => {
+        if (this.path === 'existing') {
+          this.step = 0
+          this.path = null
         } else {
-          this.step = this.step - 1;
+          this.step = this.step - 1
         }
-        this.renderStep();
-      });
+        this.renderStep()
+      })
 
-    const testBtn = btnRow.createEl("button", {
-      text: "Test connection",
-      cls: "mod-cta",
-    });
+    const testBtn = btnRow.createEl('button', {
+      text: 'Test connection',
+      cls: 'mod-cta',
+    })
     testBtn.addEventListener(
-      "click",
+      'click',
       () =>
         void (async () => {
-          const url = urlInput.value.trim();
-          const token = tokenInput.value.trim();
+          const url = urlInput.value.trim()
+          const token = tokenInput.value.trim()
 
           if (!url) {
             this.showStatus(
-              "Paste your gateway URL from the previous step",
-              "error",
-            );
-            return;
+              'Paste your gateway URL from the previous step',
+              'error'
+            )
+            return
           }
-          const normalizedUrl = normalizeGatewayUrl(url);
+          const normalizedUrl = normalizeGatewayUrl(url)
           if (!normalizedUrl) {
             this.showStatus(
-              "Expected something like ws://127.0.0.1:18789",
-              "error",
-            );
-            return;
+              'Expected something like ws://127.0.0.1:18789',
+              'error'
+            )
+            return
           }
           if (!token) {
-            this.showStatus("Paste your auth token", "error");
-            return;
+            this.showStatus('Paste your auth token', 'error')
+            return
           }
 
-          testBtn.disabled = true;
-          testBtn.textContent = "Connecting...";
-          troubleshoot.addClass("oc-hidden");
-          this.showStatus("Testing connection...", "info");
+          testBtn.disabled = true
+          testBtn.textContent = 'Connecting...'
+          troubleshoot.addClass('oc-hidden')
+          this.showStatus('Testing connection...', 'info')
 
           // Always reset to "main" session to ensure clean connection
-          urlInput.value = normalizedUrl;
-          this.plugin.settings.gatewayUrl = normalizedUrl;
-          this.plugin.settings.token = token;
-          this.plugin.settings.sessionKey = "main";
-          await this.plugin.saveSettings();
+          urlInput.value = normalizedUrl
+          this.plugin.settings.gatewayUrl = normalizedUrl
+          this.plugin.settings.token = token
+          this.plugin.settings.sessionKey = 'main'
+          await this.plugin.saveSettings()
 
           const ok = await new Promise<boolean>((resolve) => {
             const timeout = window.setTimeout(() => {
-              tc.stop();
-              resolve(false);
-            }, 8000);
+              tc.stop()
+              resolve(false)
+            }, 8000)
             const tc = new GatewayClient({
               url: normalizedUrl,
               token,
               onHello: () => {
-                window.clearTimeout(timeout);
-                tc.stop();
-                resolve(true);
+                window.clearTimeout(timeout)
+                tc.stop()
+                resolve(true)
               },
               onClose: () => {},
-            });
-            tc.start();
-          });
+            })
+            tc.start()
+          })
 
-          testBtn.disabled = false;
-          testBtn.textContent = "Test connection";
+          testBtn.disabled = false
+          testBtn.textContent = 'Test connection'
 
           if (ok) {
-            this.showStatus("✓ Connected!", "success");
+            this.showStatus('✓ Connected!', 'success')
             window.setTimeout(() => {
-              this.step = this.step + 1;
-              this.renderStep();
-            }, 800);
+              this.step = this.step + 1
+              this.renderStep()
+            }, 800)
           } else {
             this.showStatus(
-              "Could not connect. Check the troubleshooting steps below.",
-              "error",
-            );
-            troubleshoot.removeClass("oc-hidden");
+              'Could not connect. Check the troubleshooting steps below.',
+              'error'
+            )
+            troubleshoot.removeClass('oc-hidden')
           }
-        })(),
-    );
+        })()
+    )
   }
 
   private makeCopyBox(parent: HTMLElement, command: string): HTMLElement {
-    const box = parent.createDiv("openclaw-copy-box");
-    box.createEl("code", { text: command });
-    const btn = box.createSpan("openclaw-copy-btn");
-    btn.textContent = "Copy";
-    box.addEventListener("click", () => {
+    const box = parent.createDiv('openclaw-copy-box')
+    box.createEl('code', { text: command })
+    const btn = box.createSpan('openclaw-copy-btn')
+    btn.textContent = 'Copy'
+    box.addEventListener('click', () => {
       void navigator.clipboard.writeText(command).then(() => {
-        btn.textContent = "✓";
-        window.setTimeout(() => (btn.textContent = "Copy"), 1500);
-      });
-    });
-    return box;
+        btn.textContent = '✓'
+        window.setTimeout(() => (btn.textContent = 'Copy'), 1500)
+      })
+    })
+    return box
   }
 
   // ─── Step 4: Device Pairing ──────────────────────────────────────
 
   private renderPairing(el: HTMLElement): void {
-    el.createEl("h2", { text: "Pair this device" });
-    el.createEl("p", {
+    el.createEl('h2', { text: 'Pair this device' })
+    el.createEl('p', {
       text: "For security, each device needs one-time approval from the gateway. This creates a unique keypair for this device so the gateway knows it's you.",
-      cls: "openclaw-onboard-desc",
-    });
+      cls: 'openclaw-onboard-desc',
+    })
 
     const hasKeys =
-      this.plugin.settings.deviceId && this.plugin.settings.devicePublicKey;
+      this.plugin.settings.deviceId && this.plugin.settings.devicePublicKey
 
     if (hasKeys) {
-      const info = el.createDiv("openclaw-onboard-info");
-      info.createEl("p", { text: "This device already has a keypair." });
-      const deviceP = info.createEl("p");
-      deviceP.appendText("Device ID: ");
-      deviceP.createEl("code", {
-        text: (this.plugin.settings.deviceId?.slice(0, 12) ?? "") + "...",
-      });
+      const info = el.createDiv('openclaw-onboard-info')
+      info.createEl('p', { text: 'This device already has a keypair.' })
+      const deviceP = info.createEl('p')
+      deviceP.appendText('Device ID: ')
+      deviceP.createEl('code', {
+        text: (this.plugin.settings.deviceId?.slice(0, 12) ?? '') + '...',
+      })
     }
 
-    this.statusEl = el.createDiv("openclaw-onboard-status");
+    this.statusEl = el.createDiv('openclaw-onboard-status')
 
     // Approval instructions (always visible)
-    const approvalInfo = el.createDiv("openclaw-onboard-numbered");
+    const approvalInfo = el.createDiv('openclaw-onboard-numbered')
 
-    const opt1 = approvalInfo.createDiv("openclaw-onboard-numbered-item");
-    opt1.createEl("p", {
-      text: "Option 1 — Run on the server:",
-      cls: "openclaw-onboard-hint",
-    });
-    this.makeCopyBox(opt1, "openclaw devices approve --latest");
+    const opt1 = approvalInfo.createDiv('openclaw-onboard-numbered-item')
+    opt1.createEl('p', {
+      text: 'Option 1 — Run on the server:',
+      cls: 'openclaw-onboard-hint',
+    })
+    this.makeCopyBox(opt1, 'openclaw devices approve --latest')
 
-    const opt2 = approvalInfo.createDiv("openclaw-onboard-numbered-item");
-    opt2.createEl("p", {
-      text: "Option 2 — Ask your bot:",
-      cls: "openclaw-onboard-hint",
-    });
-    opt2.createEl("p", {
+    const opt2 = approvalInfo.createDiv('openclaw-onboard-numbered-item')
+    opt2.createEl('p', {
+      text: 'Option 2 — Ask your bot:',
+      cls: 'openclaw-onboard-hint',
+    })
+    opt2.createEl('p', {
       text: 'If you already have a channel connected (Telegram, Discord, etc.), just tell your bot: "approve the pending device"',
-      cls: "openclaw-onboard-hint",
-    });
+      cls: 'openclaw-onboard-hint',
+    })
 
     const afterApproval = approvalInfo.createDiv(
-      "openclaw-onboard-numbered-item",
-    );
-    afterApproval.createEl("p", {
-      text: "After approval:",
-      cls: "openclaw-onboard-hint",
-    });
-    afterApproval.createEl("p", {
-      text: "Come back here and click “Check pairing status”. If it still says disconnected, close and reopen Obsidian once.",
-      cls: "openclaw-onboard-hint",
-    });
+      'openclaw-onboard-numbered-item'
+    )
+    afterApproval.createEl('p', {
+      text: 'After approval:',
+      cls: 'openclaw-onboard-hint',
+    })
+    afterApproval.createEl('p', {
+      text: 'Come back here and click “Check pairing status”. If it still says disconnected, close and reopen Obsidian once.',
+      cls: 'openclaw-onboard-hint',
+    })
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
+    const btnRow = el.createDiv('openclaw-onboard-buttons')
     btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        this.step = this.step - 1;
-        this.renderStep();
-      });
+      .createEl('button', { text: '← back' })
+      .addEventListener('click', () => {
+        this.step = this.step - 1
+        this.renderStep()
+      })
 
-    const pairBtn = btnRow.createEl("button", {
-      text: hasKeys ? "Check pairing status" : "Send pairing request",
-      cls: "mod-cta",
-    });
+    const pairBtn = btnRow.createEl('button', {
+      text: hasKeys ? 'Check pairing status' : 'Send pairing request',
+      cls: 'mod-cta',
+    })
     pairBtn.addEventListener(
-      "click",
+      'click',
       () =>
         void (async () => {
-          pairBtn.disabled = true;
-          this.showStatus("Connecting to gateway...", "info");
+          pairBtn.disabled = true
+          this.showStatus('Connecting to gateway...', 'info')
 
           try {
             // Ensure we have a real connection to test pairing
-            await this.plugin.connectGateway();
+            await this.plugin.connectGateway()
 
             // Wait a moment for connection to establish
-            await new Promise((r) => window.setTimeout(r, 2000));
+            await new Promise((r) => window.setTimeout(r, 2000))
 
             if (!this.plugin.gatewayConnected) {
               const lastError =
-                this.plugin.lastGatewayConnectError.toLowerCase();
+                this.plugin.lastGatewayConnectError.toLowerCase()
               if (
-                lastError.includes("pair") ||
-                lastError.includes("device") ||
-                lastError.includes("approval") ||
-                lastError.includes("scope") ||
-                lastError.includes("auth")
+                lastError.includes('pair') ||
+                lastError.includes('device') ||
+                lastError.includes('approval') ||
+                lastError.includes('scope') ||
+                lastError.includes('auth')
               ) {
                 this.showStatus(
-                  "⏳ Pairing request sent. Approve it on the gateway, then click “Check pairing status”.\n\nIf you already approved it, wait a few seconds and click again.",
-                  "info",
-                );
-                pairBtn.textContent = "Check pairing status";
+                  '⏳ Pairing request sent. Approve it on the gateway, then click “Check pairing status”.\n\nIf you already approved it, wait a few seconds and click again.',
+                  'info'
+                )
+                pairBtn.textContent = 'Check pairing status'
               } else {
                 this.showStatus(
-                  "Could not reach the gateway. Check the gateway URL, token, and that the gateway is running (`openclaw status`).",
-                  "error",
-                );
+                  'Could not reach the gateway. Check the gateway URL, token, and that the gateway is running (`openclaw status`).',
+                  'error'
+                )
               }
-              pairBtn.disabled = false;
-              return;
+              pairBtn.disabled = false
+              return
             }
 
             // Try a simple request to verify pairing
             try {
               const result = (await this.plugin.gateway!.request(
-                "sessions.list",
-                {},
-              )) as { sessions?: unknown[] } | null;
+                'sessions.list',
+                {}
+              )) as { sessions?: unknown[] } | null
               if (result?.sessions) {
-                this.showStatus(
-                  "✓ Device is paired and authorized!",
-                  "success",
-                );
+                this.showStatus('✓ Device is paired and authorized!', 'success')
                 window.setTimeout(() => {
-                  this.step = this.step + 1;
-                  this.renderStep();
-                }, 1000);
-                return;
+                  this.step = this.step + 1
+                  this.renderStep()
+                }, 1000)
+                return
               }
             } catch (e: unknown) {
               // If we get an auth error, device needs approval
-              const msg = String(e);
+              const msg = String(e)
               if (
-                msg.includes("scope") ||
-                msg.includes("auth") ||
-                msg.includes("pair")
+                msg.includes('scope') ||
+                msg.includes('auth') ||
+                msg.includes('pair')
               ) {
                 this.showStatus(
-                  "⏳ Pairing request sent! Now approve it on your gateway machine using the commands above.\n\nWaiting for approval...",
-                  "info",
-                );
-                this.startPairingPoll(pairBtn);
-                return;
+                  '⏳ Pairing request sent! Now approve it on your gateway machine using the commands above.\n\nWaiting for approval...',
+                  'info'
+                )
+                this.startPairingPoll(pairBtn)
+                return
               }
             }
 
             // If we got here, connection works — might already be paired
-            this.showStatus("✓ Connection working! Proceeding...", "success");
+            this.showStatus('✓ Connection working! Proceeding...', 'success')
             window.setTimeout(() => {
-              this.step = this.step + 1;
-              this.renderStep();
-            }, 1000);
+              this.step = this.step + 1
+              this.renderStep()
+            }, 1000)
           } catch (e) {
-            this.showStatus(`Error: ${e}`, "error");
-            pairBtn.disabled = false;
+            this.showStatus(`Error: ${e}`, 'error')
+            pairBtn.disabled = false
           }
-        })(),
-    );
+        })()
+    )
 
-    const skipBtn = btnRow.createEl("button", { text: "Skip for now" });
-    skipBtn.addEventListener("click", () => {
-      this.step = this.step + 1;
-      this.renderStep();
-    });
+    const skipBtn = btnRow.createEl('button', { text: 'Skip for now' })
+    skipBtn.addEventListener('click', () => {
+      this.step = this.step + 1
+      this.renderStep()
+    })
   }
 
   private startPairingPoll(btn: HTMLButtonElement): void {
-    let attempts = 0;
+    let attempts = 0
     this.pairingPollTimer = window.setInterval(
       () =>
         void (async () => {
-          attempts++;
+          attempts++
           if (attempts > 60) {
             // 2 minutes
             if (this.pairingPollTimer)
-              window.clearInterval(this.pairingPollTimer);
+              window.clearInterval(this.pairingPollTimer)
             this.showStatus(
-              "Timed out waiting for approval. You can approve later and re-run the setup wizard from settings.",
-              "error",
-            );
-            btn.disabled = false;
-            return;
+              'Timed out waiting for approval. You can approve later and re-run the setup wizard from settings.',
+              'error'
+            )
+            btn.disabled = false
+            return
           }
           try {
             const result = (await this.plugin.gateway?.request(
-              "sessions.list",
-              {},
-            )) as { sessions?: unknown[] } | null;
+              'sessions.list',
+              {}
+            )) as { sessions?: unknown[] } | null
             if (result?.sessions) {
               if (this.pairingPollTimer)
-                window.clearInterval(this.pairingPollTimer);
-              this.showStatus("✓ Device approved!", "success");
+                window.clearInterval(this.pairingPollTimer)
+              this.showStatus('✓ Device approved!', 'success')
               window.setTimeout(() => {
-                this.step = this.step + 1;
-                this.renderStep();
-              }, 1000);
+                this.step = this.step + 1
+                this.renderStep()
+              }, 1000)
             }
           } catch {
             /* still waiting */
           }
         })(),
-      2000,
-    );
+      2000
+    )
   }
 
   // ─── Step 5: Done ────────────────────────────────────────────────
 
   private renderDone(el: HTMLElement): void {
-    el.createEl("h2", { text: "You're all set! 🎉" });
-    el.createEl("p", {
+    el.createEl('h2', { text: "You're all set! 🎉" })
+    el.createEl('p', {
       text: "OcO is connected and ready. Your vault is now the agent's workspace.",
-      cls: "openclaw-onboard-desc",
-    });
+      cls: 'openclaw-onboard-desc',
+    })
 
-    const tips = el.createDiv("openclaw-onboard-tips");
-    tips.createEl("h3", { text: "What you can do" });
-    const list = tips.createEl("ul", { cls: "openclaw-onboard-list" });
-    list.createEl("li", { text: "Chat with your AI agent in the sidebar" });
-    list.createEl("li", {
+    const tips = el.createDiv('openclaw-onboard-tips')
+    tips.createEl('h3', { text: 'What you can do' })
+    const list = tips.createEl('ul', { cls: 'openclaw-onboard-list' })
+    list.createEl('li', { text: 'Chat with your AI agent in the sidebar' })
+    list.createEl('li', {
       text: 'Use Cmd/Ctrl+P → "Ask about current note" to discuss any note',
-    });
-    list.createEl("li", {
-      text: "The agent can read, create, and edit files in your vault",
-    });
-    list.createEl("li", {
-      text: "Tool calls appear inline — click file paths to open them",
-    });
+    })
+    list.createEl('li', {
+      text: 'The agent can read, create, and edit files in your vault',
+    })
+    list.createEl('li', {
+      text: 'Tool calls appear inline — click file paths to open them',
+    })
 
-    const syncTip = el.createDiv("openclaw-onboard-info");
-    syncTip.createEl("strong", { text: "💡 sync tip: " });
+    const syncTip = el.createDiv('openclaw-onboard-info')
+    syncTip.createEl('strong', { text: '💡 sync tip: ' })
     syncTip.createSpan({
-      text: "Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically — set up once, works everywhere.",
-    });
+      text: 'Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically — set up once, works everywhere.',
+    })
 
-    const controlTip = el.createDiv("openclaw-onboard-info");
-    controlTip.createEl("strong", { text: "🖥️ control UI: " });
-    const ctrlSpan = controlTip.createSpan();
+    const controlTip = el.createDiv('openclaw-onboard-info')
+    controlTip.createEl('strong', { text: '🖥️ control UI: ' })
+    const ctrlSpan = controlTip.createSpan()
     ctrlSpan.setText(
-      "You can also manage your gateway from any browser on this machine. Just open http://127.0.0.1:18789 in a browser.",
-    );
+      'You can also manage your gateway from any browser on this machine. Just open http://127.0.0.1:18789 in a browser.'
+    )
 
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
-    const doneBtn = btnRow.createEl("button", {
-      text: "Start chatting →",
-      cls: "mod-cta",
-    });
+    const btnRow = el.createDiv('openclaw-onboard-buttons')
+    const doneBtn = btnRow.createEl('button', {
+      text: 'Start chatting →',
+      cls: 'mod-cta',
+    })
     doneBtn.addEventListener(
-      "click",
+      'click',
       () =>
         void (async () => {
-          this.plugin.settings.onboardingComplete = true;
+          this.plugin.settings.onboardingComplete = true
           // Always reset to "main" session to ensure clean connection
-          this.plugin.settings.sessionKey = "main";
-          await this.plugin.saveSettings();
-          this.close();
+          this.plugin.settings.sessionKey = 'main'
+          await this.plugin.saveSettings()
+          this.close()
           // Force reconnect (picks up new URL/token) and sync the chat view
-          void this.plugin.connectGateway();
+          void this.plugin.connectGateway()
           void this.plugin.activateView().then(() => {
-            this.plugin.chatView?.syncFromSettings();
-          });
-        })(),
-    );
+            this.plugin.chatView?.syncFromSettings()
+          })
+        })()
+    )
   }
 
-  private showStatus(text: string, type: "info" | "success" | "error"): void {
-    if (!this.statusEl) return;
-    this.statusEl.empty();
-    this.statusEl.className = `openclaw-onboard-status openclaw-onboard-status-${type}`;
+  private showStatus(text: string, type: 'info' | 'success' | 'error'): void {
+    if (!this.statusEl) return
+    this.statusEl.empty()
+    this.statusEl.className = `openclaw-onboard-status openclaw-onboard-status-${type}`
     // Support multiline with \n
-    for (const line of text.split("\n")) {
-      if (this.statusEl.childNodes.length > 0) this.statusEl.createEl("br");
-      this.statusEl.appendText(line);
+    for (const line of text.split('\n')) {
+      if (this.statusEl.childNodes.length > 0) this.statusEl.createEl('br')
+      this.statusEl.appendText(line)
     }
   }
 }
@@ -1551,15 +1445,10 @@ class OnboardingModal extends Modal {
 
 /** Best-effort image MIME from a vault file extension (for base64 sends). */
 function imageMimeFromExt(ext: string): string {
-  const e = ext.toLowerCase();
-  if (e === "jpg" || e === "jpeg") return "image/jpeg";
-  if (e === "svg") return "image/svg+xml";
-  return `image/${e}`;
-}
-
-interface SuggestItem {
-  path: string;
-  display: string;
+  const e = ext.toLowerCase()
+  if (e === 'jpg' || e === 'jpeg') return 'image/jpeg'
+  if (e === 'svg') return 'image/svg+xml'
+  return `image/${e}`
 }
 
 /**
@@ -1568,958 +1457,958 @@ interface SuggestItem {
  * the chat view feeds it ranked items and handles the chosen result.
  */
 class InlineSuggest {
-  private containerEl: HTMLElement;
-  private listEl: HTMLElement;
-  private items: SuggestItem[] = [];
-  private selectedIndex = 0;
-  private open = false;
+  private containerEl: HTMLElement
+  private listEl: HTMLElement
+  private items: SuggestItem[] = []
+  private selectedIndex = 0
+  private open = false
   /** Called when the user picks an item (click or Enter). */
-  onChoose: (item: SuggestItem) => void = () => {};
+  onChoose: (item: SuggestItem) => void = () => {}
 
   constructor(host: HTMLElement) {
-    this.containerEl = host.createDiv("openclaw-suggest");
-    this.containerEl.addClass("oc-hidden");
-    this.listEl = this.containerEl.createDiv("openclaw-suggest-list");
+    this.containerEl = host.createDiv('openclaw-suggest')
+    this.containerEl.addClass('oc-hidden')
+    this.listEl = this.containerEl.createDiv('openclaw-suggest-list')
   }
 
   get isOpen(): boolean {
-    return this.open;
+    return this.open
   }
 
   /** Show the dropdown with a fresh set of items (resets the highlight). */
   show(items: SuggestItem[]): void {
-    this.items = items;
-    this.selectedIndex = 0;
-    this.open = true;
-    this.containerEl.removeClass("oc-hidden");
-    this.render();
+    this.items = items
+    this.selectedIndex = 0
+    this.open = true
+    this.containerEl.removeClass('oc-hidden')
+    this.render()
   }
 
   /** Replace items while staying open (keeps the highlight in range). */
   update(items: SuggestItem[]): void {
-    this.items = items;
+    this.items = items
     this.selectedIndex = Math.min(
       this.selectedIndex,
-      Math.max(0, items.length - 1),
-    );
-    this.render();
+      Math.max(0, items.length - 1)
+    )
+    this.render()
   }
 
   close(): void {
-    this.open = false;
-    this.items = [];
-    this.containerEl.addClass("oc-hidden");
-    this.listEl.empty();
+    this.open = false
+    this.items = []
+    this.containerEl.addClass('oc-hidden')
+    this.listEl.empty()
   }
 
   /** Move the highlight by delta, wrapping around the list. */
   moveSelection(delta: number): void {
-    if (this.items.length === 0) return;
-    const n = this.items.length;
-    this.selectedIndex = (this.selectedIndex + delta + n) % n;
-    this.render();
+    if (this.items.length === 0) return
+    const n = this.items.length
+    this.selectedIndex = (this.selectedIndex + delta + n) % n
+    this.render()
   }
 
   /** Return the highlighted item without closing. */
   current(): SuggestItem | null {
-    return this.items[this.selectedIndex] ?? null;
+    return this.items[this.selectedIndex] ?? null
   }
 
   private render(): void {
-    this.listEl.empty();
+    this.listEl.empty()
     if (this.items.length === 0) {
       this.listEl.createDiv({
-        cls: "openclaw-suggest-empty",
-        text: "No matching files",
-      });
-      return;
+        cls: 'openclaw-suggest-empty',
+        text: 'No matching files',
+      })
+      return
     }
     this.items.forEach((item, i) => {
-      const row = this.listEl.createDiv("openclaw-suggest-item");
-      if (i === this.selectedIndex) row.addClass("is-selected");
-      const slash = item.display.lastIndexOf("/");
-      const name = slash >= 0 ? item.display.slice(slash + 1) : item.display;
-      const dir = slash >= 0 ? item.display.slice(0, slash + 1) : "";
-      row.createSpan({ cls: "openclaw-suggest-name", text: name });
-      if (dir) row.createSpan({ cls: "openclaw-suggest-path", text: dir });
-      row.addEventListener("mousedown", (e) => {
+      const row = this.listEl.createDiv('openclaw-suggest-item')
+      if (i === this.selectedIndex) row.addClass('is-selected')
+      const slash = item.display.lastIndexOf('/')
+      const name = slash >= 0 ? item.display.slice(slash + 1) : item.display
+      const dir = slash >= 0 ? item.display.slice(0, slash + 1) : ''
+      row.createSpan({ cls: 'openclaw-suggest-name', text: name })
+      if (dir) row.createSpan({ cls: 'openclaw-suggest-path', text: dir })
+      row.addEventListener('mousedown', (e) => {
         // mousedown (not click) so the textarea doesn't blur first
-        e.preventDefault();
-        this.onChoose(item);
-      });
-      row.addEventListener("mouseenter", () => {
-        this.selectedIndex = i;
-        this.render();
-      });
-    });
+        e.preventDefault()
+        this.onChoose(item)
+      })
+      row.addEventListener('mouseenter', () => {
+        this.selectedIndex = i
+        this.render()
+      })
+    })
   }
 }
 
 // ─── Chat View ───────────────────────────────────────────────────────
 
-const VIEW_TYPE = "openclaw-chat";
+const VIEW_TYPE = 'openclaw-chat'
 
 class OpenClawChatView extends ItemView {
-  plugin: OpenClawPlugin;
-  private topBarEl!: HTMLElement;
-  private messagesEl!: HTMLElement;
-  private tabBarEl!: HTMLElement;
-  private hamburgerBarEl!: HTMLElement;
-  private hamburgerDropdownEl2!: HTMLElement;
-  private tabSwitcherLabelEl!: HTMLElement;
-  private tabSwitcherMeterFillEl!: HTMLElement;
-  private tabSwitcherActionsEl!: HTMLElement;
-  private tabArrowLeftEl!: HTMLElement;
-  private tabArrowRightEl!: HTMLElement;
-  private controlPanelEl!: HTMLElement;
-  private controlPanelBackdropEl!: HTMLElement;
-  private isMobileMode = false;
-  private brainBtnEl!: HTMLElement;
-  private tabSessions: { key: string; label: string; pct: number }[] = [];
-  private renderingTabs = false;
-  private tabDeleteInProgress = false;
-  private inputEl!: HTMLTextAreaElement;
-  private sendBtn!: HTMLButtonElement;
-  private reconnectBtn!: HTMLButtonElement;
-  private abortBtn!: HTMLButtonElement;
-  private statusEl!: HTMLElement;
-  private pairingBannerEl: HTMLElement | null = null;
-  private messages: ChatMessage[] = [];
+  plugin: OpenClawPlugin
+  private topBarEl!: HTMLElement
+  private messagesEl!: HTMLElement
+  private tabBarEl!: HTMLElement
+  private hamburgerBarEl!: HTMLElement
+  private hamburgerDropdownEl2!: HTMLElement
+  private tabSwitcherLabelEl!: HTMLElement
+  private tabSwitcherMeterFillEl!: HTMLElement
+  private tabSwitcherActionsEl!: HTMLElement
+  private tabArrowLeftEl!: HTMLElement
+  private tabArrowRightEl!: HTMLElement
+  private controlPanelEl!: HTMLElement
+  private controlPanelBackdropEl!: HTMLElement
+  private isMobileMode = false
+  private brainBtnEl!: HTMLElement
+  private tabSessions: { key: string; label: string; pct: number }[] = []
+  private renderingTabs = false
+  private tabDeleteInProgress = false
+  private inputEl!: HTMLTextAreaElement
+  private sendBtn!: HTMLButtonElement
+  private reconnectBtn!: HTMLButtonElement
+  private abortBtn!: HTMLButtonElement
+  private statusEl!: HTMLElement
+  private pairingBannerEl: HTMLElement | null = null
+  private messages: ChatMessage[] = []
 
   // ─── Per-session stream state ──────────────────────────────────────
   private streams = new Map<
     string,
     {
-      runId: string;
-      text: string | null;
-      toolCalls: string[];
-      items: StreamItem[];
-      splitPoints: number[];
-      lastDeltaTime: number;
-      compactTimer: number | null;
-      workingTimer: number | null;
+      runId: string
+      text: string | null
+      toolCalls: string[]
+      items: StreamItem[]
+      splitPoints: number[]
+      lastDeltaTime: number
+      compactTimer: number | null
+      workingTimer: number | null
     }
-  >();
+  >()
   /** Map runId -> sessionKey so we can route stream events that lack sessionKey */
-  private runToSession = new Map<string, string>();
+  private runToSession = new Map<string, string>()
 
-  private streamEl: HTMLElement | null = null;
+  private streamEl: HTMLElement | null = null
 
   /** Get current active session key */
   private get activeSessionKey(): string {
-    return this.plugin.settings.sessionKey || "main";
+    return this.plugin.settings.sessionKey || 'main'
   }
   /** Get stream state for active tab (if any) */
   private get activeStream() {
-    return this.streams.get(this.activeSessionKey) ?? null;
+    return this.streams.get(this.activeSessionKey) ?? null
   }
 
-  private contextMeterEl!: HTMLElement;
-  private contextFillEl!: HTMLElement;
-  private contextLabelEl!: HTMLElement;
-  modelLabelEl!: HTMLElement;
+  private contextMeterEl!: HTMLElement
+  private contextFillEl!: HTMLElement
+  private contextLabelEl!: HTMLElement
+  modelLabelEl!: HTMLElement
 
-  currentModel: string = "";
-  currentModelSetAt: number = 0; // timestamp to prevent stale overwrites
-  cachedSessionDisplayName: string = "";
+  currentModel: string = ''
+  currentModelSetAt: number = 0 // timestamp to prevent stale overwrites
+  cachedSessionDisplayName: string = ''
 
   // Bar controls state
-  private thinkingLevel: string = "";
-  private verboseLevel: string = "";
-  private thinkingDefault: string = "";
-  private verboseDefault: string = "";
-  private thinkChipEl: HTMLElement | null = null;
-  private verboseChipEl: HTMLElement | null = null;
+  private thinkingLevel: string = ''
+  private verboseLevel: string = ''
+  private thinkingDefault: string = ''
+  private verboseDefault: string = ''
+  private thinkChipEl: HTMLElement | null = null
+  private verboseChipEl: HTMLElement | null = null
 
   // Agent switcher state
-  private agents: AgentInfo[] = [];
+  private agents: AgentInfo[] = []
   private activeAgent: AgentInfo = {
-    id: "main",
-    name: "Agent",
-    emoji: "🤖",
-    creature: "",
-  };
-  private profileBtnEl: HTMLElement | null = null;
-  private profileDropdownEl: HTMLElement | null = null;
-  private typingEl!: HTMLElement;
-  private attachPreviewEl!: HTMLElement;
-  private suggest!: InlineSuggest;
-  private activeMention: { query: string; start: number } | null = null;
-  private fileInputEl!: HTMLInputElement;
+    id: 'main',
+    name: 'Agent',
+    emoji: '🤖',
+    creature: '',
+  }
+  private profileBtnEl: HTMLElement | null = null
+  private profileDropdownEl: HTMLElement | null = null
+  private typingEl!: HTMLElement
+  private attachPreviewEl!: HTMLElement
+  private suggest!: InlineSuggest
+  private activeMention: { query: string; start: number } | null = null
+  private fileInputEl!: HTMLInputElement
   // `inline`/`token`: @-mention attachments shown as inline text (no chip). The
   // token is the exact `@path` string inserted; if it's gone from the textarea,
   // the attachment is reconciled away (see reconcileInlineMentions).
   private pendingAttachments: {
-    name: string;
-    content: string;
-    vaultPath?: string;
-    base64?: string;
-    mimeType?: string;
-    inline?: boolean;
-    token?: string;
-  }[] = [];
-  private sending = false;
-  private recording = false;
-  private mediaRecorder: MediaRecorder | null = null;
-  private recordedChunks: Blob[] = [];
+    name: string
+    content: string
+    vaultPath?: string
+    base64?: string
+    mimeType?: string
+    inline?: boolean
+    token?: string
+  }[] = []
+  private sending = false
+  private recording = false
+  private mediaRecorder: MediaRecorder | null = null
+  private recordedChunks: Blob[] = []
 
-  private bannerEl!: HTMLElement;
+  private bannerEl!: HTMLElement
 
   /** Get the session key prefix for the active agent */
   private get agentPrefix(): string {
-    return `agent:${this.activeAgent.id}:`;
+    return `agent:${this.activeAgent.id}:`
   }
 
   constructor(leaf: WorkspaceLeaf, plugin: OpenClawPlugin) {
-    super(leaf);
-    this.plugin = plugin;
+    super(leaf)
+    this.plugin = plugin
   }
 
   getViewType(): string {
-    return VIEW_TYPE;
+    return VIEW_TYPE
   }
 
   getDisplayText(): string {
-    return "OcO";
+    return 'OcO'
   }
 
   getIcon(): string {
-    return "message-square";
+    return 'message-square'
   }
 
   async onOpen(): Promise<void> {
-    const container = this.containerEl.children[1] as HTMLElement;
-    container.empty();
-    container.addClass("openclaw-chat-container");
+    const container = this.containerEl.children[1] as HTMLElement
+    container.empty()
+    container.addClass('openclaw-chat-container')
 
     // Top bar with tabs + profile
-    const topBar = container.createDiv("openclaw-top-bar");
-    this.topBarEl = topBar;
+    const topBar = container.createDiv('openclaw-top-bar')
+    this.topBarEl = topBar
 
     // Tab bar (browser-like tabs)
-    this.tabBarEl = topBar.createDiv("openclaw-tab-bar");
+    this.tabBarEl = topBar.createDiv('openclaw-tab-bar')
     this.tabBarEl.addEventListener(
-      "wheel",
+      'wheel',
       (e) => {
-        e.preventDefault();
-        this.tabBarEl.scrollLeft += e.deltaY;
+        e.preventDefault()
+        this.tabBarEl.scrollLeft += e.deltaY
       },
-      { passive: false },
-    );
+      { passive: false }
+    )
 
     // Control panel button (left side, ClawTabs-style)
-    const controlBtn = topBar.createEl("button", {
-      cls: "oc-control-panel-btn",
-      attr: { "aria-label": "Control panel" },
-    });
-    createSvgIcon(controlBtn, SVG_CONTROL_PANEL);
-    controlBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.toggleControlPanel();
-    });
+    const controlBtn = topBar.createEl('button', {
+      cls: 'oc-control-panel-btn',
+      attr: { 'aria-label': 'Control panel' },
+    })
+    createSvgIcon(controlBtn, SVG_CONTROL_PANEL)
+    controlBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.toggleControlPanel()
+    })
 
     // Hamburger bar (mobile mode — hidden by default)
-    this.hamburgerBarEl = topBar.createDiv("oc-hamburger-bar");
+    this.hamburgerBarEl = topBar.createDiv('oc-hamburger-bar')
 
     // Mobile control panel button (left side)
-    const hamburgerControlBtn = this.hamburgerBarEl.createEl("button", {
-      cls: "oc-hamburger-dash-btn",
-      attr: { "aria-label": "Control panel" },
-    });
-    createSvgIcon(hamburgerControlBtn, SVG_CONTROL_PANEL);
-    hamburgerControlBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.toggleControlPanel();
-    });
+    const hamburgerControlBtn = this.hamburgerBarEl.createEl('button', {
+      cls: 'oc-hamburger-dash-btn',
+      attr: { 'aria-label': 'Control panel' },
+    })
+    createSvgIcon(hamburgerControlBtn, SVG_CONTROL_PANEL)
+    hamburgerControlBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.toggleControlPanel()
+    })
 
     // Tab switcher
-    const tabSwitcher = this.hamburgerBarEl.createDiv("oc-tab-switcher");
-    this.tabArrowLeftEl = tabSwitcher.createEl("button", {
-      cls: "oc-tab-switcher-arrow oc-arrow-left",
-    });
-    createSvgIcon(this.tabArrowLeftEl, SVG_CHEVRON_LEFT);
-    const switcherCurrent = tabSwitcher.createDiv("oc-tab-switcher-current");
-    const switcherRow = switcherCurrent.createDiv("oc-tab-switcher-row");
-    this.tabSwitcherLabelEl = switcherRow.createSpan("oc-tab-switcher-label");
-    this.tabSwitcherLabelEl.textContent = "Home";
+    const tabSwitcher = this.hamburgerBarEl.createDiv('oc-tab-switcher')
+    this.tabArrowLeftEl = tabSwitcher.createEl('button', {
+      cls: 'oc-tab-switcher-arrow oc-arrow-left',
+    })
+    createSvgIcon(this.tabArrowLeftEl, SVG_CHEVRON_LEFT)
+    const switcherCurrent = tabSwitcher.createDiv('oc-tab-switcher-current')
+    const switcherRow = switcherCurrent.createDiv('oc-tab-switcher-row')
+    this.tabSwitcherLabelEl = switcherRow.createSpan('oc-tab-switcher-label')
+    this.tabSwitcherLabelEl.textContent = 'Home'
     this.tabSwitcherActionsEl = switcherRow.createSpan(
-      "oc-tab-switcher-actions",
-    );
-    const switcherMeter = switcherCurrent.createDiv("oc-tab-switcher-meter");
+      'oc-tab-switcher-actions'
+    )
+    const switcherMeter = switcherCurrent.createDiv('oc-tab-switcher-meter')
     this.tabSwitcherMeterFillEl = switcherMeter.createDiv(
-      "oc-tab-switcher-meter-fill",
-    );
-    this.tabArrowRightEl = tabSwitcher.createEl("button", {
-      cls: "oc-tab-switcher-arrow oc-arrow-right",
-    });
-    createSvgIcon(this.tabArrowRightEl, SVG_CHEVRON_RIGHT);
+      'oc-tab-switcher-meter-fill'
+    )
+    this.tabArrowRightEl = tabSwitcher.createEl('button', {
+      cls: 'oc-tab-switcher-arrow oc-arrow-right',
+    })
+    createSvgIcon(this.tabArrowRightEl, SVG_CHEVRON_RIGHT)
 
     // Hamburger button lives on the right in ClawTabs mobile mode
-    const hamburgerBtn = this.hamburgerBarEl.createEl("button", {
-      cls: "oc-hamburger-btn",
-      attr: { "aria-label": "Tabs" },
-    });
-    createSvgIcon(hamburgerBtn, SVG_HAMBURGER);
+    const hamburgerBtn = this.hamburgerBarEl.createEl('button', {
+      cls: 'oc-hamburger-btn',
+      attr: { 'aria-label': 'Tabs' },
+    })
+    createSvgIcon(hamburgerBtn, SVG_HAMBURGER)
 
     // Hamburger dropdown
     this.hamburgerDropdownEl2 = this.hamburgerBarEl.createDiv(
-      "oc-hamburger-dropdown",
-    );
+      'oc-hamburger-dropdown'
+    )
 
     // Arrow click handlers
-    this.tabArrowLeftEl.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const currentKey = this.plugin.settings.sessionKey || "main";
-      const idx = this.tabSessions.findIndex((t) => t.key === currentKey);
-      if (idx > 0) this.switchToTab(this.tabSessions[idx - 1]);
-    });
-    this.tabArrowRightEl.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const currentKey = this.plugin.settings.sessionKey || "main";
-      const idx = this.tabSessions.findIndex((t) => t.key === currentKey);
+    this.tabArrowLeftEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const currentKey = this.plugin.settings.sessionKey || 'main'
+      const idx = this.tabSessions.findIndex((t) => t.key === currentKey)
+      if (idx > 0) this.switchToTab(this.tabSessions[idx - 1])
+    })
+    this.tabArrowRightEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const currentKey = this.plugin.settings.sessionKey || 'main'
+      const idx = this.tabSessions.findIndex((t) => t.key === currentKey)
       if (idx < this.tabSessions.length - 1)
-        this.switchToTab(this.tabSessions[idx + 1]);
-    });
+        this.switchToTab(this.tabSessions[idx + 1])
+    })
 
     // Hamburger button toggles dropdown
-    hamburgerBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.renderHamburgerDropdown();
+    hamburgerBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.renderHamburgerDropdown()
       this.hamburgerDropdownEl2.toggleClass(
-        "oc-open",
-        !this.hamburgerDropdownEl2.hasClass("oc-open"),
-      );
-    });
-    activeDocument.addEventListener("click", (e) => {
+        'oc-open',
+        !this.hamburgerDropdownEl2.hasClass('oc-open')
+      )
+    })
+    activeDocument.addEventListener('click', (e) => {
       if (
         !this.hamburgerDropdownEl2.contains(e.target as Node) &&
         e.target !== hamburgerBtn &&
         !hamburgerBtn.contains(e.target as Node)
       ) {
-        this.hamburgerDropdownEl2.removeClass("oc-open");
+        this.hamburgerDropdownEl2.removeClass('oc-open')
       }
-    });
+    })
 
     // Watch for resize to toggle mobile mode
-    const resizeObserver = new ResizeObserver(() => this.updateTabMode());
-    resizeObserver.observe(container);
-    this.register(() => resizeObserver.disconnect());
+    const resizeObserver = new ResizeObserver(() => this.updateTabMode())
+    resizeObserver.observe(container)
+    this.register(() => resizeObserver.disconnect())
 
     // Agent switching lives in the control panel. Keep this legacy element hidden
     // so the top-right UI matches ClawTabs' cleaner header.
-    this.profileBtnEl = topBar.createDiv("openclaw-agent-btn");
-    this.profileBtnEl.addClass("oc-hidden");
-    this.profileBtnEl.setAttribute("aria-label", "Switch agent");
-    this.updateAgentButton();
+    this.profileBtnEl = topBar.createDiv('openclaw-agent-btn')
+    this.profileBtnEl.addClass('oc-hidden')
+    this.profileBtnEl.setAttribute('aria-label', 'Switch agent')
+    this.updateAgentButton()
 
     // Agent switcher dropdown (hidden by default)
-    this.profileDropdownEl = container.createDiv("openclaw-agent-dropdown");
-    this.profileDropdownEl.addClass("oc-hidden");
+    this.profileDropdownEl = container.createDiv('openclaw-agent-dropdown')
+    this.profileDropdownEl.addClass('oc-hidden')
 
     // Control panel drawer (compact Obsidian version of ClawTabs dashboard)
     this.controlPanelBackdropEl = container.createDiv(
-      "oc-control-panel-backdrop oc-hidden",
-    );
-    this.controlPanelEl = container.createDiv("oc-control-panel oc-hidden");
-    this.controlPanelBackdropEl.addEventListener("click", () =>
-      this.closeControlPanel(),
-    );
+      'oc-control-panel-backdrop oc-hidden'
+    )
+    this.controlPanelEl = container.createDiv('oc-control-panel oc-hidden')
+    this.controlPanelBackdropEl.addEventListener('click', () =>
+      this.closeControlPanel()
+    )
 
     // Close dropdown when clicking outside
-    activeDocument.addEventListener("click", () => {
-      if (this.profileDropdownEl) this.profileDropdownEl.addClass("oc-hidden");
-    });
+    activeDocument.addEventListener('click', () => {
+      if (this.profileDropdownEl) this.profileDropdownEl.addClass('oc-hidden')
+    })
 
     // We'll render tabs after loading sessions
-    void this.renderTabs();
+    void this.renderTabs()
 
     // Hidden elements for compatibility
 
-    this.contextMeterEl = createDiv();
-    this.contextFillEl = createDiv();
-    this.contextLabelEl = createSpan();
-    this.modelLabelEl = createDiv();
+    this.contextMeterEl = createDiv()
+    this.contextFillEl = createDiv()
+    this.contextLabelEl = createSpan()
+    this.modelLabelEl = createDiv()
 
     // Status banner (compaction, etc.) — hidden by default
-    this.bannerEl = container.createDiv("openclaw-banner");
-    this.bannerEl.addClass("oc-hidden");
+    this.bannerEl = container.createDiv('openclaw-banner')
+    this.bannerEl.addClass('oc-hidden')
 
     // Messages area
-    this.messagesEl = container.createDiv("openclaw-messages");
+    this.messagesEl = container.createDiv('openclaw-messages')
 
     // Typing indicator (hidden by default)
-    this.typingEl = container.createDiv("openclaw-typing");
-    this.typingEl.addClass("oc-hidden");
-    const typingDots = this.typingEl.createDiv("openclaw-typing-inner");
-    typingDots.createSpan({ text: "Thinking", cls: "openclaw-typing-text" });
-    const dotsEl = typingDots.createSpan("openclaw-typing-dots");
-    dotsEl.createSpan("openclaw-dot");
-    dotsEl.createSpan("openclaw-dot");
-    dotsEl.createSpan("openclaw-dot");
+    this.typingEl = container.createDiv('openclaw-typing')
+    this.typingEl.addClass('oc-hidden')
+    const typingDots = this.typingEl.createDiv('openclaw-typing-inner')
+    typingDots.createSpan({ text: 'Thinking', cls: 'openclaw-typing-text' })
+    const dotsEl = typingDots.createSpan('openclaw-typing-dots')
+    dotsEl.createSpan('openclaw-dot')
+    dotsEl.createSpan('openclaw-dot')
+    dotsEl.createSpan('openclaw-dot')
 
     // Input area
-    const inputArea = container.createDiv("openclaw-input-area");
+    const inputArea = container.createDiv('openclaw-input-area')
     // Meta row (model pill above input)
-    const inputMeta = inputArea.createDiv("openclaw-input-meta");
-    this.brainBtnEl = inputMeta.createEl("button", {
-      cls: "openclaw-brain-btn",
-      attr: { "aria-label": "Switch model" },
-    });
-    this.brainBtnEl.textContent = "model";
-    this.brainBtnEl.createSpan({ text: " ▾", cls: "openclaw-brain-btn-arrow" });
-    this.brainBtnEl.addEventListener("click", () => this.openModelPicker());
+    const inputMeta = inputArea.createDiv('openclaw-input-meta')
+    this.brainBtnEl = inputMeta.createEl('button', {
+      cls: 'openclaw-brain-btn',
+      attr: { 'aria-label': 'Switch model' },
+    })
+    this.brainBtnEl.textContent = 'model'
+    this.brainBtnEl.createSpan({ text: ' ▾', cls: 'openclaw-brain-btn-arrow' })
+    this.brainBtnEl.addEventListener('click', () => this.openModelPicker())
 
     // Bar control chips (thinking + show steps)
-    inputMeta.createSpan({ text: "·", cls: "oc-bar-sep" });
+    inputMeta.createSpan({ text: '·', cls: 'oc-bar-sep' })
     this.thinkChipEl = inputMeta.createSpan({
-      text: "think: default",
-      cls: "oc-bar-chip",
-    });
-    this.thinkChipEl.addEventListener("click", () => {
-      void this.cycleBarControl("thinkingLevel", [
-        "",
-        "off",
-        "low",
-        "medium",
-        "high",
-      ]);
-    });
-    inputMeta.createSpan({ text: "·", cls: "oc-bar-sep" });
+      text: 'think: default',
+      cls: 'oc-bar-chip',
+    })
+    this.thinkChipEl.addEventListener('click', () => {
+      void this.cycleBarControl('thinkingLevel', [
+        '',
+        'off',
+        'low',
+        'medium',
+        'high',
+      ])
+    })
+    inputMeta.createSpan({ text: '·', cls: 'oc-bar-sep' })
     this.verboseChipEl = inputMeta.createSpan({
-      text: "show steps: default",
-      cls: "oc-bar-chip",
-    });
-    this.verboseChipEl.addEventListener("click", () => {
-      void this.cycleBarControl("verboseLevel", ["", "off", "on", "full"]);
-    });
-    const inputRow = inputArea.createDiv("openclaw-input-row");
+      text: 'show steps: default',
+      cls: 'oc-bar-chip',
+    })
+    this.verboseChipEl.addEventListener('click', () => {
+      void this.cycleBarControl('verboseLevel', ['', 'off', 'on', 'full'])
+    })
+    const inputRow = inputArea.createDiv('openclaw-input-row')
     // Attach button + hidden file input
-    const attachBtn = inputRow.createEl("button", {
-      cls: "openclaw-attach-btn",
-      attr: { "aria-label": "Attach file" },
-    });
-    setIcon(attachBtn, "plus");
-    this.fileInputEl = inputArea.createEl("input", {
-      cls: "openclaw-file-input",
+    const attachBtn = inputRow.createEl('button', {
+      cls: 'openclaw-attach-btn',
+      attr: { 'aria-label': 'Attach file' },
+    })
+    setIcon(attachBtn, 'plus')
+    this.fileInputEl = inputArea.createEl('input', {
+      cls: 'openclaw-file-input',
       attr: {
-        type: "file",
+        type: 'file',
         accept:
-          "image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css",
-        multiple: "true",
+          'image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css',
+        multiple: 'true',
       },
-    });
-    this.fileInputEl.addClass("oc-hidden");
+    })
+    this.fileInputEl.addClass('oc-hidden')
     this.fileInputEl.addEventListener(
-      "change",
-      () => void this.handleFileSelect(),
-    );
-    attachBtn.addEventListener("click", () => this.fileInputEl.click());
-    this.inputEl = inputRow.createEl("textarea", {
-      cls: "openclaw-input",
-      attr: { placeholder: "Message...", rows: "1" },
-    });
+      'change',
+      () => void this.handleFileSelect()
+    )
+    attachBtn.addEventListener('click', () => this.fileInputEl.click())
+    this.inputEl = inputRow.createEl('textarea', {
+      cls: 'openclaw-input',
+      attr: { placeholder: 'Message...', rows: '1' },
+    })
     // Attachment preview (hidden by default)
-    this.attachPreviewEl = inputArea.createDiv("openclaw-attach-preview");
-    this.attachPreviewEl.addClass("oc-hidden");
+    this.attachPreviewEl = inputArea.createDiv('openclaw-attach-preview')
+    this.attachPreviewEl.addClass('oc-hidden')
     // @-mention file picker dropdown (anchored to the input area)
-    this.suggest = new InlineSuggest(inputArea);
-    this.suggest.onChoose = (item) => void this.chooseMention(item);
-    this.abortBtn = inputRow.createEl("button", {
-      cls: "openclaw-abort-btn",
-      attr: { "aria-label": "Stop" },
-    });
-    setIcon(this.abortBtn, "square");
-    this.abortBtn.addClass("oc-hidden");
-    const sendWrapper = inputRow.createDiv("openclaw-send-wrapper");
-    this.sendBtn = sendWrapper.createEl("button", {
-      cls: "openclaw-send-btn",
-      attr: { "aria-label": "Send" },
-    });
-    setIcon(this.sendBtn, "send");
-    this.sendBtn.addClass("oc-opacity-low");
-    this.reconnectBtn = sendWrapper.createEl("button", {
-      cls: "openclaw-reconnect-btn",
-      attr: { "aria-label": "Reconnect" },
-    });
-    setIcon(this.reconnectBtn, "refresh-cw");
-    this.reconnectBtn.addClass("oc-hidden");
-    this.reconnectBtn.addEventListener("click", () => {
-      void this.plugin.connectGateway();
-    });
-    this.statusEl = sendWrapper.createSpan("openclaw-status-dot");
+    this.suggest = new InlineSuggest(inputArea)
+    this.suggest.onChoose = (item) => void this.chooseMention(item)
+    this.abortBtn = inputRow.createEl('button', {
+      cls: 'openclaw-abort-btn',
+      attr: { 'aria-label': 'Stop' },
+    })
+    setIcon(this.abortBtn, 'square')
+    this.abortBtn.addClass('oc-hidden')
+    const sendWrapper = inputRow.createDiv('openclaw-send-wrapper')
+    this.sendBtn = sendWrapper.createEl('button', {
+      cls: 'openclaw-send-btn',
+      attr: { 'aria-label': 'Send' },
+    })
+    setIcon(this.sendBtn, 'send')
+    this.sendBtn.addClass('oc-opacity-low')
+    this.reconnectBtn = sendWrapper.createEl('button', {
+      cls: 'openclaw-reconnect-btn',
+      attr: { 'aria-label': 'Reconnect' },
+    })
+    setIcon(this.reconnectBtn, 'refresh-cw')
+    this.reconnectBtn.addClass('oc-hidden')
+    this.reconnectBtn.addEventListener('click', () => {
+      void this.plugin.connectGateway()
+    })
+    this.statusEl = sendWrapper.createSpan('openclaw-status-dot')
 
     // Events
-    this.inputEl.addEventListener("keydown", (e) => {
+    this.inputEl.addEventListener('keydown', (e) => {
       // @-mention dropdown captures navigation keys while open
       if (this.suggest.isOpen) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          this.suggest.moveSelection(1);
-          return;
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          this.suggest.moveSelection(1)
+          return
         }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          this.suggest.moveSelection(-1);
-          return;
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          this.suggest.moveSelection(-1)
+          return
         }
-        if (e.key === "Escape") {
-          e.preventDefault();
-          this.closeMentionSuggest();
-          return;
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          this.closeMentionSuggest()
+          return
         }
-        if (e.key === "Enter" || e.key === "Tab") {
-          const item = this.suggest.current();
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          const item = this.suggest.current()
           if (item) {
-            e.preventDefault();
-            void this.chooseMention(item);
-            return;
+            e.preventDefault()
+            void this.chooseMention(item)
+            return
           }
         }
       }
-      if (e.key === "Enter") {
+      if (e.key === 'Enter') {
         // Mobile: Enter always creates new line (use send button to send)
         // Desktop: Enter sends, Shift+Enter creates new line
         if (Platform.isMobile) {
           // Let Enter create a new line naturally
-          return;
+          return
         }
         if (!e.shiftKey) {
-          e.preventDefault();
-          void this.sendMessage();
+          e.preventDefault()
+          void this.sendMessage()
         }
       }
-    });
-    this.inputEl.addEventListener("input", () => {
-      this.autoResize();
-      this.updateSendButton();
-      this.updateMentionSuggest();
-      this.reconcileInlineMentions();
-    });
-    this.inputEl.addEventListener("blur", () => {
-      if (this.suggest.isOpen) this.closeMentionSuggest();
-    });
-    this.inputEl.addEventListener("focus", () => {
+    })
+    this.inputEl.addEventListener('input', () => {
+      this.autoResize()
+      this.updateSendButton()
+      this.updateMentionSuggest()
+      this.reconcileInlineMentions()
+    })
+    this.inputEl.addEventListener('blur', () => {
+      if (this.suggest.isOpen) this.closeMentionSuggest()
+    })
+    this.inputEl.addEventListener('focus', () => {
       window.setTimeout(() => {
-        this.inputEl.scrollIntoView({ block: "end", behavior: "smooth" });
-      }, 300);
-    });
+        this.inputEl.scrollIntoView({ block: 'end', behavior: 'smooth' })
+      }, 300)
+    })
     // Clipboard paste: capture images from clipboard
-    this.inputEl.addEventListener("paste", (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
+    this.inputEl.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items
+      if (!items) return
       for (const item of Array.from(items)) {
-        if (item.type.startsWith("image/")) {
-          e.preventDefault();
-          const file = item.getAsFile();
-          if (file) void this.handlePastedFile(file);
-          return;
+        if (item.type.startsWith('image/')) {
+          e.preventDefault()
+          const file = item.getAsFile()
+          if (file) void this.handlePastedFile(file)
+          return
         }
       }
-    });
-    this.sendBtn.addEventListener("click", () => {
+    })
+    this.sendBtn.addEventListener('click', () => {
       if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
-        void this.sendMessage();
+        void this.sendMessage()
       }
       // Voice recording disabled — base64 in message text bloats context
-    });
-    this.abortBtn.addEventListener("click", () => void this.abortMessage());
+    })
+    this.abortBtn.addEventListener('click', () => void this.abortMessage())
 
     // Initial state
-    this.updateStatus();
-    this.plugin.chatView = this;
+    this.updateStatus()
+    this.plugin.chatView = this
 
     // Mobile keyboard avoidance:
     // 1. Capacitor Keyboard.setResizeMode('native') — makes webview shrink with keyboard
     // 2. Hide Obsidian's bottom drawer elements when keyboard is open — they waste ~120px
     try {
-      type KeyboardResizeMode = "none" | "native" | "body" | "ionic";
+      type KeyboardResizeMode = 'none' | 'native' | 'body' | 'ionic'
       type KeyboardPlugin = {
         setResizeMode?: (opts: {
-          mode: KeyboardResizeMode;
-        }) => Promise<void> | void;
+          mode: KeyboardResizeMode
+        }) => Promise<void> | void
         addListener: (
-          eventName: "keyboardWillShow" | "keyboardDidHide",
-          listener: () => void,
-        ) => unknown;
-      };
+          eventName: 'keyboardWillShow' | 'keyboardDidHide',
+          listener: () => void
+        ) => unknown
+      }
       type CapacitorRuntime = {
         Plugins?: {
-          Keyboard?: KeyboardPlugin;
-        };
-      };
+          Keyboard?: KeyboardPlugin
+        }
+      }
       const cap = (window as unknown as { Capacitor?: CapacitorRuntime })
-        .Capacitor;
+        .Capacitor
       if (cap?.Plugins?.Keyboard) {
-        const kb = cap.Plugins.Keyboard;
+        const kb = cap.Plugins.Keyboard
 
         // Set resize mode to native so webview shrinks
-        await kb.setResizeMode?.({ mode: "native" });
+        await kb.setResizeMode?.({ mode: 'native' })
 
         // Find bottom drawer siblings that waste space
         const drawerInner = container.closest<HTMLElement>(
-          ".workspace-drawer-inner",
-        );
+          '.workspace-drawer-inner'
+        )
         const tabContainer =
           drawerInner?.querySelector<HTMLElement>(
-            ".workspace-drawer-tab-container",
-          ) ?? null;
-        let hiddenSiblings: HTMLElement[] = [];
+            '.workspace-drawer-tab-container'
+          ) ?? null
+        let hiddenSiblings: HTMLElement[] = []
 
         const onKeyboardShow = () => {
-          if (!drawerInner || !tabContainer) return;
+          if (!drawerInner || !tabContainer) return
           // Hide all siblings of workspace-drawer-tab-container (tab dots, bottom panes)
-          hiddenSiblings = [];
+          hiddenSiblings = []
           for (const child of Array.from(
-            drawerInner.children,
+            drawerInner.children
           ) as HTMLElement[]) {
-            if (child !== tabContainer && !child.hasClass("oc-hidden")) {
-              hiddenSiblings.push(child);
-              child.addClass("oc-hidden");
+            if (child !== tabContainer && !child.hasClass('oc-hidden')) {
+              hiddenSiblings.push(child)
+              child.addClass('oc-hidden')
             }
           }
           // Also hide tab header within the tab container (the "Plugin" header bar)
           const activeTabContainer = tabContainer.querySelector<HTMLElement>(
-            ".workspace-drawer-active-tab-container",
-          );
+            '.workspace-drawer-active-tab-container'
+          )
           if (activeTabContainer) {
             for (const child of Array.from(
-              activeTabContainer.children,
+              activeTabContainer.children
             ) as HTMLElement[]) {
               const isContent = child.classList.contains(
-                "workspace-drawer-active-tab-content",
-              );
-              if (!isContent && !child.hasClass("oc-hidden")) {
-                hiddenSiblings.push(child);
-                child.addClass("oc-hidden");
+                'workspace-drawer-active-tab-content'
+              )
+              if (!isContent && !child.hasClass('oc-hidden')) {
+                hiddenSiblings.push(child)
+                child.addClass('oc-hidden')
               }
             }
           }
-        };
+        }
 
         const onKeyboardHide = () => {
           // Restore hidden siblings
           for (const el of hiddenSiblings) {
-            el.removeClass("oc-hidden");
+            el.removeClass('oc-hidden')
           }
-          hiddenSiblings = [];
-        };
+          hiddenSiblings = []
+        }
 
         // Listen for Capacitor keyboard events
-        kb.addListener("keyboardWillShow", onKeyboardShow);
-        kb.addListener("keyboardDidHide", onKeyboardHide);
-        window.addEventListener("keyboardWillShow", onKeyboardShow);
-        window.addEventListener("keyboardDidHide", onKeyboardHide);
+        kb.addListener('keyboardWillShow', onKeyboardShow)
+        kb.addListener('keyboardDidHide', onKeyboardHide)
+        window.addEventListener('keyboardWillShow', onKeyboardShow)
+        window.addEventListener('keyboardDidHide', onKeyboardHide)
 
         // Restore on view close
         this.register(() => {
-          void kb.setResizeMode?.({ mode: "none" });
-          onKeyboardHide();
-          window.removeEventListener("keyboardWillShow", onKeyboardShow);
-          window.removeEventListener("keyboardDidHide", onKeyboardHide);
-        });
+          void kb.setResizeMode?.({ mode: 'none' })
+          onKeyboardHide()
+          window.removeEventListener('keyboardWillShow', onKeyboardShow)
+          window.removeEventListener('keyboardDidHide', onKeyboardHide)
+        })
       }
     } catch {
       /* not on mobile / Capacitor not available */
     }
 
     // Init touch gestures for mobile
-    this.initTouchGestures();
+    this.initTouchGestures()
 
     if (this.plugin.gatewayConnected) {
-      await this.loadHistory();
-      void this.loadAgents();
-      void this.loadDefaults();
+      await this.loadHistory()
+      void this.loadAgents()
+      void this.loadDefaults()
     }
   }
 
   private toggleControlPanel(): void {
-    if (!this.controlPanelEl || !this.controlPanelBackdropEl) return;
-    const open = this.controlPanelEl.hasClass("oc-open");
-    if (open) this.closeControlPanel();
-    else this.openControlPanel();
+    if (!this.controlPanelEl || !this.controlPanelBackdropEl) return
+    const open = this.controlPanelEl.hasClass('oc-open')
+    if (open) this.closeControlPanel()
+    else this.openControlPanel()
   }
 
   private openControlPanel(): void {
-    if (!this.controlPanelEl || !this.controlPanelBackdropEl) return;
-    this.renderControlPanel();
-    this.controlPanelBackdropEl.removeClass("oc-hidden");
-    this.controlPanelEl.removeClass("oc-hidden");
-    this.controlPanelEl.addClass("oc-open");
+    if (!this.controlPanelEl || !this.controlPanelBackdropEl) return
+    this.renderControlPanel()
+    this.controlPanelBackdropEl.removeClass('oc-hidden')
+    this.controlPanelEl.removeClass('oc-hidden')
+    this.controlPanelEl.addClass('oc-open')
   }
 
   private closeControlPanel(): void {
-    this.controlPanelEl?.removeClass("oc-open");
-    this.controlPanelEl?.addClass("oc-hidden");
-    this.controlPanelBackdropEl?.addClass("oc-hidden");
+    this.controlPanelEl?.removeClass('oc-open')
+    this.controlPanelEl?.addClass('oc-hidden')
+    this.controlPanelBackdropEl?.addClass('oc-hidden')
   }
 
   private renderControlPanel(): void {
-    const panel = this.controlPanelEl;
-    if (!panel) return;
-    panel.empty();
+    const panel = this.controlPanelEl
+    if (!panel) return
+    panel.empty()
 
-    const close = panel.createEl("button", {
-      text: "×",
-      cls: "oc-control-panel-close",
-      attr: { "aria-label": "Close" },
-    });
-    close.addEventListener("click", () => this.closeControlPanel());
+    const close = panel.createEl('button', {
+      text: '×',
+      cls: 'oc-control-panel-close',
+      attr: { 'aria-label': 'Close' },
+    })
+    close.addEventListener('click', () => this.closeControlPanel())
 
-    const agentCard = panel.createDiv("oc-hud-agent-card");
-    const identity = agentCard.createDiv("oc-hud-identity");
+    const agentCard = panel.createDiv('oc-hud-agent-card')
+    const identity = agentCard.createDiv('oc-hud-identity')
     const orb = identity.createDiv(
-      `oc-hud-orb${this.plugin.gatewayConnected ? " online" : ""}`,
-    );
+      `oc-hud-orb${this.plugin.gatewayConnected ? ' online' : ''}`
+    )
     orb.createSpan({
-      text: this.activeAgent.emoji || "🤖",
-      cls: "oc-hud-orb-emoji",
-    });
-    const info = identity.createDiv("oc-hud-identity-info");
+      text: this.activeAgent.emoji || '🤖',
+      cls: 'oc-hud-orb-emoji',
+    })
+    const info = identity.createDiv('oc-hud-identity-info')
     info.createDiv({
-      text: this.activeAgent.name || this.activeAgent.id || "Oscar",
-      cls: "oc-hud-agent-name",
-    });
+      text: this.activeAgent.name || this.activeAgent.id || 'Oscar',
+      cls: 'oc-hud-agent-name',
+    })
     info.createDiv({
-      text: this.plugin.gatewayConnected ? "online" : "disconnected",
-      cls: `oc-hud-status-line${this.plugin.gatewayConnected ? " online" : ""}`,
-    });
+      text: this.plugin.gatewayConnected ? 'online' : 'disconnected',
+      cls: `oc-hud-status-line${this.plugin.gatewayConnected ? ' online' : ''}`,
+    })
 
     if (this.agents.length > 1) {
-      const agentsRow = agentCard.createDiv("oc-agent-row");
+      const agentsRow = agentCard.createDiv('oc-agent-row')
       for (const agent of this.agents) {
-        const pill = agentsRow.createEl("button", {
-          cls: `oc-agent-pill${agent.id === this.activeAgent.id ? " oc-agent-active" : ""}`,
-        });
+        const pill = agentsRow.createEl('button', {
+          cls: `oc-agent-pill${agent.id === this.activeAgent.id ? ' oc-agent-active' : ''}`,
+        })
         pill.createSpan({
-          text: agent.emoji || "🤖",
-          cls: "oc-agent-pill-emoji",
-        });
+          text: agent.emoji || '🤖',
+          cls: 'oc-agent-pill-emoji',
+        })
         pill.createSpan({
           text: agent.name || agent.id,
-          cls: "oc-agent-pill-name",
-        });
+          cls: 'oc-agent-pill-name',
+        })
         pill.addEventListener(
-          "click",
+          'click',
           () =>
             void (async () => {
-              await this.switchAgent(agent);
-              this.renderControlPanel();
-            })(),
-        );
+              await this.switchAgent(agent)
+              this.renderControlPanel()
+            })()
+        )
       }
     }
 
-    panel.createDiv({ text: "SETTINGS", cls: "oc-hud-group-label" });
+    panel.createDiv({ text: 'SETTINGS', cls: 'oc-hud-group-label' })
 
-    const section = panel.createDiv("oc-hud-section");
+    const section = panel.createDiv('oc-hud-section')
     const addRow = (
       label: string,
       value: string,
-      onClick: (() => void) | null = null,
+      onClick: (() => void) | null = null
     ) => {
-      const row = section.createEl("button", { cls: "oc-hud-section-toggle" });
-      row.createSpan({ text: label, cls: "oc-hud-section-label" });
-      row.createSpan({ text: value, cls: "oc-hud-section-value" });
-      row.createSpan({ text: "›", cls: "oc-hud-section-chevron" });
-      if (onClick) row.addEventListener("click", onClick);
-      else row.disabled = true;
-    };
+      const row = section.createEl('button', { cls: 'oc-hud-section-toggle' })
+      row.createSpan({ text: label, cls: 'oc-hud-section-label' })
+      row.createSpan({ text: value, cls: 'oc-hud-section-value' })
+      row.createSpan({ text: '›', cls: 'oc-hud-section-chevron' })
+      if (onClick) row.addEventListener('click', onClick)
+      else row.disabled = true
+    }
 
     addRow(
-      "AI MODEL DEFAULTS",
-      this.currentModel ? this.shortModelName(this.currentModel) : "default",
+      'AI MODEL DEFAULTS',
+      this.currentModel ? this.shortModelName(this.currentModel) : 'default',
       () => {
-        this.closeControlPanel();
-        this.openModelPicker();
-      },
-    );
+        this.closeControlPanel()
+        this.openModelPicker()
+      }
+    )
 
-    const reliabilityValue = `thinking ${this.thinkingLevel || this.thinkingDefault || "default"} · steps ${this.verboseLevel || this.verboseDefault || "default"}`;
+    const reliabilityValue = `thinking ${this.thinkingLevel || this.thinkingDefault || 'default'} · steps ${this.verboseLevel || this.verboseDefault || 'default'}`
     addRow(
-      "RELIABILITY DEFAULTS",
+      'RELIABILITY DEFAULTS',
       reliabilityValue,
       () =>
         void (async () => {
-          await this.cycleBarControl("thinkingLevel", [
-            "",
-            "off",
-            "low",
-            "medium",
-            "high",
-          ]);
-          await this.cycleBarControl("verboseLevel", ["", "off", "on", "full"]);
-          this.renderControlPanel();
-        })(),
-    );
+          await this.cycleBarControl('thinkingLevel', [
+            '',
+            'off',
+            'low',
+            'medium',
+            'high',
+          ])
+          await this.cycleBarControl('verboseLevel', ['', 'off', 'on', 'full'])
+          this.renderControlPanel()
+        })()
+    )
 
     addRow(
-      "SERVER",
-      this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, "") ||
-        "not configured",
-      null,
-    );
+      'SERVER',
+      this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, '') ||
+        'not configured',
+      null
+    )
 
-    const footer = panel.createDiv("oc-hud-footer");
-    footer.createSpan({ text: `OcO ${this.plugin.manifest.version}` });
+    const footer = panel.createDiv('oc-hud-footer')
+    footer.createSpan({ text: `OcO ${this.plugin.manifest.version}` })
   }
 
   async onClose(): Promise<void> {
     if (this.plugin.chatView === this) {
-      this.plugin.chatView = null;
+      this.plugin.chatView = null
     }
   }
 
   /** Reload the chat view when settings change externally (e.g. onboarding, settings tab) */
   syncFromSettings(): void {
-    this.messages = [];
-    this.messagesEl.empty();
-    this.streamEl = null;
-    void this.loadHistory();
-    void this.renderTabs();
-    void this.updateContextMeter();
-    this.updateStatus();
+    this.messages = []
+    this.messagesEl.empty()
+    this.streamEl = null
+    void this.loadHistory()
+    void this.renderTabs()
+    void this.updateContextMeter()
+    this.updateStatus()
   }
 
   updateStatus(): void {
-    if (!this.statusEl) return;
-    this.statusEl.removeClass("connected", "disconnected");
-    const connected = this.plugin.gatewayConnected;
-    this.statusEl.addClass(connected ? "connected" : "disconnected");
+    if (!this.statusEl) return
+    this.statusEl.removeClass('connected', 'disconnected')
+    const connected = this.plugin.gatewayConnected
+    this.statusEl.addClass(connected ? 'connected' : 'disconnected')
 
     // Swap send button for reconnect when disconnected
     if (connected) {
-      this.sendBtn.removeClass("oc-hidden");
-      if (this.reconnectBtn) this.reconnectBtn.addClass("oc-hidden");
-      this.inputEl.disabled = false;
-      this.inputEl.placeholder = "Message...";
+      this.sendBtn.removeClass('oc-hidden')
+      if (this.reconnectBtn) this.reconnectBtn.addClass('oc-hidden')
+      this.inputEl.disabled = false
+      this.inputEl.placeholder = 'Message...'
     } else {
-      this.sendBtn.addClass("oc-hidden");
-      if (this.reconnectBtn) this.reconnectBtn.removeClass("oc-hidden");
-      this.inputEl.disabled = true;
-      this.inputEl.placeholder = "Disconnected";
+      this.sendBtn.addClass('oc-hidden')
+      if (this.reconnectBtn) this.reconnectBtn.removeClass('oc-hidden')
+      this.inputEl.disabled = true
+      this.inputEl.placeholder = 'Disconnected'
     }
   }
 
   showPairingBanner(): void {
-    if (this.pairingBannerEl) return; // already showing
+    if (this.pairingBannerEl) return // already showing
     this.pairingBannerEl = this.messagesEl.parentElement!.createDiv(
-      "openclaw-pairing-banner",
-    );
+      'openclaw-pairing-banner'
+    )
     this.messagesEl.parentElement!.insertBefore(
       this.pairingBannerEl,
-      this.messagesEl,
-    );
+      this.messagesEl
+    )
 
     this.pairingBannerEl.createDiv({
-      text: "🔐 Device pairing required",
-      cls: "openclaw-pairing-title",
-    });
-    this.pairingBannerEl.createEl("p", {
-      text: "This device needs approval before it can connect.",
-      cls: "openclaw-pairing-desc",
-    });
+      text: '🔐 Device pairing required',
+      cls: 'openclaw-pairing-title',
+    })
+    this.pairingBannerEl.createEl('p', {
+      text: 'This device needs approval before it can connect.',
+      cls: 'openclaw-pairing-desc',
+    })
 
-    const opt1Label = this.pairingBannerEl.createEl("p", {
-      text: "Run on the server:",
-      cls: "openclaw-pairing-option-label",
-    });
+    const opt1Label = this.pairingBannerEl.createEl('p', {
+      text: 'Run on the server:',
+      cls: 'openclaw-pairing-option-label',
+    })
     const copyBox = opt1Label.parentElement!.createDiv(
-      "openclaw-pairing-copy-box",
-    );
-    copyBox.createEl("code", { text: "openclaw devices approve --latest" });
-    const copyBtn = copyBox.createSpan("openclaw-pairing-copy-btn");
-    copyBtn.textContent = "Copy";
-    copyBox.addEventListener("click", () => {
+      'openclaw-pairing-copy-box'
+    )
+    copyBox.createEl('code', { text: 'openclaw devices approve --latest' })
+    const copyBtn = copyBox.createSpan('openclaw-pairing-copy-btn')
+    copyBtn.textContent = 'Copy'
+    copyBox.addEventListener('click', () => {
       void navigator.clipboard
-        .writeText("openclaw devices approve --latest")
+        .writeText('openclaw devices approve --latest')
         .then(() => {
-          copyBtn.textContent = "✓";
+          copyBtn.textContent = '✓'
           window.setTimeout(() => {
-            copyBtn.textContent = "Copy";
-          }, 1500);
-        });
-    });
+            copyBtn.textContent = 'Copy'
+          }, 1500)
+        })
+    })
 
-    this.pairingBannerEl.createEl("p", {
+    this.pairingBannerEl.createEl('p', {
       text: 'Or tell your bot on another channel: "approve the pending device"',
-      cls: "openclaw-pairing-desc openclaw-pairing-alt",
-    });
+      cls: 'openclaw-pairing-desc openclaw-pairing-alt',
+    })
 
-    const waitRow = this.pairingBannerEl.createDiv("openclaw-pairing-wait");
-    waitRow.createDiv("openclaw-pairing-spinner");
-    waitRow.createSpan({ text: "Waiting for approval..." });
+    const waitRow = this.pairingBannerEl.createDiv('openclaw-pairing-wait')
+    waitRow.createDiv('openclaw-pairing-spinner')
+    waitRow.createSpan({ text: 'Waiting for approval...' })
   }
 
   hidePairingBanner(): void {
     if (this.pairingBannerEl) {
-      this.pairingBannerEl.remove();
-      this.pairingBannerEl = null;
+      this.pairingBannerEl.remove()
+      this.pairingBannerEl = null
     }
   }
 
   /** Fetch all agents from the gateway and load their identities */
   async loadAgents(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
       // Get agent list
-      const result = (await this.plugin.gateway.request("agents.list", {})) as {
-        agents?: AgentListItem[];
-      } | null;
-      const agentList: AgentListItem[] = result?.agents || [];
+      const result = (await this.plugin.gateway.request('agents.list', {})) as {
+        agents?: AgentListItem[]
+      } | null
+      const agentList: AgentListItem[] = result?.agents || []
       if (agentList.length === 0) {
-        agentList.push({ id: "main" });
+        agentList.push({ id: 'main' })
       }
 
       // Build agent info from gateway data only — no file parsing
-      const agents: AgentInfo[] = [];
+      const agents: AgentInfo[] = []
       for (const a of agentList) {
         agents.push({
-          id: a.id || "main",
-          name: a.name || a.id || "Agent",
-          emoji: "🤖",
-          creature: "",
-        });
+          id: a.id || 'main',
+          name: a.name || a.id || 'Agent',
+          emoji: '🤖',
+          creature: '',
+        })
       }
 
-      this.agents = agents;
+      this.agents = agents
 
       // Set active agent
-      const savedId = this.plugin.settings.activeAgentId;
-      const active = agents.find((a) => a.id === savedId) || agents[0];
+      const savedId = this.plugin.settings.activeAgentId
+      const active = agents.find((a) => a.id === savedId) || agents[0]
       if (active) {
-        this.activeAgent = active;
+        this.activeAgent = active
         if (this.plugin.settings.activeAgentId !== active.id) {
-          this.plugin.settings.activeAgentId = active.id;
-          await this.plugin.saveSettings();
+          this.plugin.settings.activeAgentId = active.id
+          await this.plugin.saveSettings()
         }
       }
 
-      this.updateAgentButton();
+      this.updateAgentButton()
     } catch (e) {
-      console.warn("[OcO] Failed to load agents:", e);
+      console.warn('[OcO] Failed to load agents:', e)
     }
   }
 
   /** Load agent defaults (thinking/show steps) from gateway config */
   async loadDefaults(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
-      const result = await this.plugin.gateway.request("config.get", {});
-      const raw = result as Record<string, unknown> | null;
-      const cfg = (raw?.config || raw || {}) as Record<string, unknown>;
-      let parsed: Record<string, unknown> = cfg;
-      if (raw && typeof raw.raw === "string") {
+      const result = await this.plugin.gateway.request('config.get', {})
+      const raw = result as Record<string, unknown> | null
+      const cfg = (raw?.config || raw || {}) as Record<string, unknown>
+      let parsed: Record<string, unknown> = cfg
+      if (raw && typeof raw.raw === 'string') {
         try {
-          parsed = JSON.parse(raw.raw) as Record<string, unknown>;
+          parsed = JSON.parse(raw.raw) as Record<string, unknown>
         } catch {
           /* use cfg */
         }
       }
-      const agents = parsed?.agents as Record<string, unknown> | undefined;
-      const ad = (agents?.defaults || {}) as Record<string, unknown>;
-      this.thinkingDefault = str(ad?.thinkingDefault);
-      this.verboseDefault = str(ad?.verboseDefault);
-      this.updateBarControls();
+      const agents = parsed?.agents as Record<string, unknown> | undefined
+      const ad = (agents?.defaults || {}) as Record<string, unknown>
+      this.thinkingDefault = str(ad?.thinkingDefault)
+      this.verboseDefault = str(ad?.verboseDefault)
+      this.updateBarControls()
     } catch {
       // config.get may not be available on all gateway versions
     }
@@ -2527,148 +2416,147 @@ class OpenClawChatView extends ItemView {
 
   /** Update the legacy agent button. Agent switching now lives in the control panel. */
   private updateAgentButton(): void {
-    if (!this.profileBtnEl) return;
-    this.profileBtnEl.addClass("oc-hidden");
+    if (!this.profileBtnEl) return
+    this.profileBtnEl.addClass('oc-hidden')
   }
 
   /** Switch to a different agent */
   private async switchAgent(agent: AgentInfo): Promise<void> {
-    if (agent.id === this.activeAgent.id) return;
-    this.activeAgent = agent;
-    this.plugin.settings.activeAgentId = agent.id;
-    this.plugin.settings.sessionKey = "main"; // reset to main session of new agent
-    await this.plugin.saveSettings();
-    this.updateAgentButton();
-    await this.loadHistory();
-    await this.renderTabs();
+    if (agent.id === this.activeAgent.id) return
+    this.activeAgent = agent
+    this.plugin.settings.activeAgentId = agent.id
+    this.plugin.settings.sessionKey = 'main' // reset to main session of new agent
+    await this.plugin.saveSettings()
+    this.updateAgentButton()
+    await this.loadHistory()
+    await this.renderTabs()
   }
 
   /** Toggle the agent switcher dropdown */
   private toggleAgentSwitcher(): void {
-    if (!this.profileDropdownEl) return;
-    const visible = !this.profileDropdownEl.hasClass("oc-hidden");
+    if (!this.profileDropdownEl) return
+    const visible = !this.profileDropdownEl.hasClass('oc-hidden')
     if (visible) {
-      this.profileDropdownEl.addClass("oc-hidden");
-      return;
+      this.profileDropdownEl.addClass('oc-hidden')
+      return
     }
-    this.profileDropdownEl.empty();
+    this.profileDropdownEl.empty()
 
     for (const agent of this.agents) {
-      const isActive = agent.id === this.activeAgent.id;
+      const isActive = agent.id === this.activeAgent.id
       const item = this.profileDropdownEl.createDiv({
-        cls: `openclaw-agent-item${isActive ? " active" : ""}`,
-      });
+        cls: `openclaw-agent-item${isActive ? ' active' : ''}`,
+      })
       item.createSpan({
-        text: agent.emoji || "🤖",
-        cls: "openclaw-agent-item-emoji",
-      });
-      const info = item.createDiv("openclaw-agent-item-info");
-      info.createDiv({ text: agent.name, cls: "openclaw-agent-item-name" });
+        text: agent.emoji || '🤖',
+        cls: 'openclaw-agent-item-emoji',
+      })
+      const info = item.createDiv('openclaw-agent-item-info')
+      info.createDiv({ text: agent.name, cls: 'openclaw-agent-item-name' })
       if (agent.creature) {
         info.createDiv({
           text: agent.creature,
-          cls: "openclaw-agent-item-sub",
-        });
+          cls: 'openclaw-agent-item-sub',
+        })
       }
       if (!isActive) {
-        item.addEventListener("click", () => {
-          this.profileDropdownEl!.addClass("oc-hidden");
-          void this.switchAgent(agent);
-        });
+        item.addEventListener('click', () => {
+          this.profileDropdownEl!.addClass('oc-hidden')
+          void this.switchAgent(agent)
+        })
       }
     }
 
-    this.profileDropdownEl.removeClass("oc-hidden");
+    this.profileDropdownEl.removeClass('oc-hidden')
   }
 
   async loadHistory(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
-      const result = (await this.plugin.gateway.request("chat.history", {
+      const result = (await this.plugin.gateway.request('chat.history', {
         sessionKey: this.plugin.settings.sessionKey,
         limit: 200,
-      })) as { messages?: HistoryMessage[] } | null;
+      })) as { messages?: HistoryMessage[] } | null
       if (result?.messages && Array.isArray(result.messages)) {
         this.messages = result.messages
           .filter(
-            (m: HistoryMessage) => m.role === "user" || m.role === "assistant",
+            (m: HistoryMessage) => m.role === 'user' || m.role === 'assistant'
           )
           .map((m: HistoryMessage) => {
-            const { text, images } = this.extractContent(m.content);
+            const { text, images } = this.extractContent(m.content)
             return {
-              role: m.role as "user" | "assistant",
+              role: m.role as 'user' | 'assistant',
               text,
               images,
               timestamp: m.timestamp ?? Date.now(),
               contentBlocks: Array.isArray(m.content) ? m.content : undefined,
-            };
+            }
           })
           .filter(
             (m: ChatMessage) =>
               (m.text.trim() || m.images.length > 0) &&
-              !m.text.startsWith("HEARTBEAT"),
-          );
+              !m.text.startsWith('HEARTBEAT')
+          )
 
         // Hide the first user message (typically the /new or /reset system prompt)
-        if (this.messages.length > 0 && this.messages[0].role === "user") {
-          this.messages = this.messages.slice(1);
+        if (this.messages.length > 0 && this.messages[0].role === 'user') {
+          this.messages = this.messages.slice(1)
         }
 
         // No post-processing needed: VOICE: refs are in the assistant message text itself
 
-        await this.renderMessages();
-        void this.updateContextMeter();
+        await this.renderMessages()
+        void this.updateContextMeter()
       }
     } catch (e) {
-      console.error("[OcO] Failed to load history:", e);
+      console.error('[OcO] Failed to load history:', e)
     }
   }
 
   private extractContent(content: string | ContentBlock[] | undefined): {
-    text: string;
-    images: string[];
+    text: string
+    images: string[]
   } {
-    let text = "";
-    const images: string[] = [];
+    let text = ''
+    const images: string[] = []
 
-    if (typeof content === "string") {
-      text = content;
+    if (typeof content === 'string') {
+      text = content
     } else if (Array.isArray(content)) {
       for (const c of content) {
-        if (c.type === "text") {
-          text += (text ? "\n" : "") + c.text;
-        } else if (c.type === "tool_result") {
+        if (c.type === 'text') {
+          text += (text ? '\n' : '') + c.text
+        } else if (c.type === 'tool_result') {
           // Extract text from tool_result content (e.g., TTS MEDIA: paths)
-          const trContent = c.content;
-          if (typeof trContent === "string") {
-            text += (text ? "\n" : "") + trContent;
+          const trContent = c.content
+          if (typeof trContent === 'string') {
+            text += (text ? '\n' : '') + trContent
           } else if (Array.isArray(trContent)) {
             for (const tc of trContent) {
-              if (tc?.type === "text" && tc.text)
-                text += (text ? "\n" : "") + tc.text;
+              if (tc?.type === 'text' && tc.text)
+                text += (text ? '\n' : '') + tc.text
             }
           }
-        } else if (c.type === "image_url" && c.image_url?.url) {
-          images.push(c.image_url.url);
+        } else if (c.type === 'image_url' && c.image_url?.url) {
+          images.push(c.image_url.url)
         }
       }
     }
 
     // Extract vault image paths from "File saved at:" lines
-    const savedAtRegex =
-      /File saved at:\s*(.+?openclaw-attachments\/[^\s\n]+)/g;
-    let match;
+    const savedAtRegex = /File saved at:\s*(.+?openclaw-attachments\/[^\s\n]+)/g
+    let match
     while ((match = savedAtRegex.exec(text)) !== null) {
       // Try to resolve as vault-relative path
-      const fullPath = match[1].trim();
-      const vaultRelative = fullPath.includes("openclaw-attachments/")
-        ? "openclaw-attachments/" + fullPath.split("openclaw-attachments/")[1]
-        : null;
+      const fullPath = match[1].trim()
+      const vaultRelative = fullPath.includes('openclaw-attachments/')
+        ? 'openclaw-attachments/' + fullPath.split('openclaw-attachments/')[1]
+        : null
       if (vaultRelative) {
         try {
           const resourcePath =
-            this.app.vault.adapter.getResourcePath(vaultRelative);
-          if (resourcePath) images.push(resourcePath);
+            this.app.vault.adapter.getResourcePath(vaultRelative)
+          if (resourcePath) images.push(resourcePath)
         } catch {
           /* ignore */
         }
@@ -2676,258 +2564,257 @@ class OpenClawChatView extends ItemView {
     }
 
     // Extract inline data URIs from text (legacy)
-    const dataUriRegex =
-      /(?:^|\n)data:(image\/[^;]+);base64,[A-Za-z0-9+/=\n]+/g;
+    const dataUriRegex = /(?:^|\n)data:(image\/[^;]+);base64,[A-Za-z0-9+/=\n]+/g
     while ((match = dataUriRegex.exec(text)) !== null) {
-      images.push(match[0].replace(/^\n/, "").trim());
+      images.push(match[0].replace(/^\n/, '').trim())
     }
     // Remove data URIs from text display
     text = text
-      .replace(/\n?data:image\/[^;]+;base64,[A-Za-z0-9+/=\n]+/g, "")
-      .trim();
+      .replace(/\n?data:image\/[^;]+;base64,[A-Za-z0-9+/=\n]+/g, '')
+      .trim()
     // Strip [Attached image: ...] and "File saved at:" lines
-    text = text.replace(/^\[Attached image:.*?\]\s*/gm, "").trim();
-    text = text.replace(/^File saved at:.*$/gm, "").trim();
+    text = text.replace(/^\[Attached image:.*?\]\s*/gm, '').trim()
+    text = text.replace(/^File saved at:.*$/gm, '').trim()
 
     // Strip gateway metadata blocks (Conversation info + JSON code block)
     text = text
       .replace(
         /Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/g,
-        "",
+        ''
       )
-      .trim();
+      .trim()
     // Strip any remaining standalone metadata JSON blocks
     text = text
-      .replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, "")
-      .trim();
+      .replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, '')
+      .trim()
     // Strip timestamp prefixes like "[Sun 2026-02-22 21:58 GMT+7] "
-    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, "").trim();
+    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, '').trim()
     // Strip media attachment lines
-    text = text.replace(/^\[media attached:.*?\]\s*/gm, "").trim();
+    text = text.replace(/^\[media attached:.*?\]\s*/gm, '').trim()
     // Strip "To send an image back..." instruction lines
-    text = text.replace(/^To send an image back.*$/gm, "").trim();
+    text = text.replace(/^To send an image back.*$/gm, '').trim()
     // Strip "NO_REPLY" responses
-    if (text === "NO_REPLY" || text === "HEARTBEAT_OK") text = "";
-    return { text, images };
+    if (text === 'NO_REPLY' || text === 'HEARTBEAT_OK') text = ''
+    return { text, images }
   }
 
   private updateSendButton(): void {
     if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
-      this.sendBtn.setAttribute("aria-label", "Send");
-      this.sendBtn.removeClass("oc-opacity-low");
+      this.sendBtn.setAttribute('aria-label', 'Send')
+      this.sendBtn.removeClass('oc-opacity-low')
     } else {
-      this.sendBtn.setAttribute("aria-label", "Send");
-      this.sendBtn.addClass("oc-opacity-low");
+      this.sendBtn.setAttribute('aria-label', 'Send')
+      this.sendBtn.addClass('oc-opacity-low')
     }
   }
 
   private async startRecording(): Promise<void> {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.recordedChunks = [];
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      this.recordedChunks = []
 
       // Try opus first, fall back to default
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "";
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : ''
 
       this.mediaRecorder = new MediaRecorder(
         stream,
-        mimeType ? { mimeType } : {},
-      );
-      this.mediaRecorder.addEventListener("dataavailable", (e) => {
-        if (e.data.size > 0) this.recordedChunks.push(e.data);
-      });
-      this.mediaRecorder.addEventListener("stop", () => {
-        stream.getTracks().forEach((t) => t.stop());
-        void this.finishRecording();
-      });
+        mimeType ? { mimeType } : {}
+      )
+      this.mediaRecorder.addEventListener('dataavailable', (e) => {
+        if (e.data.size > 0) this.recordedChunks.push(e.data)
+      })
+      this.mediaRecorder.addEventListener('stop', () => {
+        stream.getTracks().forEach((t) => t.stop())
+        void this.finishRecording()
+      })
 
-      this.mediaRecorder.start();
-      this.recording = true;
-      this.updateSendButton();
-      this.inputEl.placeholder = "Recording... tap ■ to stop";
+      this.mediaRecorder.start()
+      this.recording = true
+      this.updateSendButton()
+      this.inputEl.placeholder = 'Recording... tap ■ to stop'
     } catch (e) {
-      console.error("[OcO] Mic access failed:", e);
-      new Notice("Microphone access denied");
+      console.error('[OcO] Mic access failed:', e)
+      new Notice('Microphone access denied')
     }
   }
 
   private stopRecording(): void {
-    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
-      this.mediaRecorder.stop();
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      this.mediaRecorder.stop()
     }
-    this.recording = false;
-    this.updateSendButton();
-    this.inputEl.placeholder = "Message...";
+    this.recording = false
+    this.updateSendButton()
+    this.inputEl.placeholder = 'Message...'
   }
 
   private async finishRecording(): Promise<void> {
-    if (this.recordedChunks.length === 0) return;
+    if (this.recordedChunks.length === 0) return
     const blob = new Blob(this.recordedChunks, {
-      type: this.mediaRecorder?.mimeType || "audio/webm",
-    });
-    this.recordedChunks = [];
+      type: this.mediaRecorder?.mimeType || 'audio/webm',
+    })
+    this.recordedChunks = []
 
     // Convert to base64
-    const arrayBuf = await blob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuf);
-    let binary = "";
+    const arrayBuf = await blob.arrayBuffer()
+    const bytes = new Uint8Array(arrayBuf)
+    let binary = ''
     for (let i = 0; i < bytes.length; i++)
-      binary += String.fromCharCode(bytes[i]);
-    const b64 = btoa(binary);
-    const mime = blob.type || "audio/webm";
+      binary += String.fromCharCode(bytes[i])
+    const b64 = btoa(binary)
+    const mime = blob.type || 'audio/webm'
 
     // Upload to gateway static dir via the agent (exec), and send VOICE: ref
     // For now: send as AUDIO_DATA in message text, agent handles transcription
-    const marker = `AUDIO_DATA:${mime};base64,${b64}`;
+    const marker = `AUDIO_DATA:${mime};base64,${b64}`
 
     // Show voice message in local UI
     this.messages.push({
-      role: "user",
-      text: "🎤 Voice message",
+      role: 'user',
+      text: '🎤 Voice message',
       images: [],
       timestamp: Date.now(),
-    });
-    await this.renderMessages();
+    })
+    await this.renderMessages()
 
     // Send to gateway
-    const runId = generateId();
-    const sendSessionKey = this.activeSessionKey;
+    const runId = generateId()
+    const sendSessionKey = this.activeSessionKey
     const ss = {
       runId,
-      text: "" as string | null,
+      text: '' as string | null,
       toolCalls: [] as string[],
       items: [] as StreamItem[],
       splitPoints: [] as number[],
       lastDeltaTime: 0,
       compactTimer: null as number | null,
       workingTimer: null as number | null,
-    };
-    this.streams.set(sendSessionKey, ss);
-    this.runToSession.set(runId, sendSessionKey);
-    this.abortBtn.removeClass("oc-hidden");
-    this.typingEl.removeClass("oc-hidden");
-    const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
-    if (thinkText) thinkText.textContent = "Thinking";
-    this.scrollToBottom();
+    }
+    this.streams.set(sendSessionKey, ss)
+    this.runToSession.set(runId, sendSessionKey)
+    this.abortBtn.removeClass('oc-hidden')
+    this.typingEl.removeClass('oc-hidden')
+    const thinkText = this.typingEl.querySelector('.openclaw-typing-text')
+    if (thinkText) thinkText.textContent = 'Thinking'
+    this.scrollToBottom()
 
     try {
-      await this.plugin.gateway!.request("chat.send", {
+      await this.plugin.gateway!.request('chat.send', {
         sessionKey: sendSessionKey,
         message: marker,
         deliver: false,
         idempotencyKey: runId,
-      });
+      })
     } catch (e) {
       this.messages.push({
-        role: "assistant",
+        role: 'assistant',
         text: `Error: ${e}`,
         images: [],
         timestamp: Date.now(),
-      });
-      this.streams.delete(sendSessionKey);
-      this.runToSession.delete(runId);
-      this.abortBtn.addClass("oc-hidden");
-      await this.renderMessages();
+      })
+      this.streams.delete(sendSessionKey)
+      this.runToSession.delete(runId)
+      this.abortBtn.addClass('oc-hidden')
+      await this.renderMessages()
     }
   }
 
   async sendMessage(): Promise<void> {
-    let text = this.inputEl.value.trim();
-    const hasAttachments = this.pendingAttachments.length > 0;
-    if (!text && !hasAttachments) return;
-    if (this.sending) return;
+    let text = this.inputEl.value.trim()
+    const hasAttachments = this.pendingAttachments.length > 0
+    if (!text && !hasAttachments) return
+    if (this.sending) return
     if (!this.plugin.gateway?.connected) {
-      new Notice("Not connected to OcO gateway");
-      return;
+      new Notice('Not connected to OcO gateway')
+      return
     }
 
-    this.sending = true;
-    this.sendBtn.disabled = true;
-    this.inputEl.value = "";
-    this.autoResize();
+    this.sending = true
+    this.sendBtn.disabled = true
+    this.inputEl.value = ''
+    this.autoResize()
 
     // Build attachments for gateway
-    let fullMessage = text;
-    const userImages: string[] = [];
+    let fullMessage = text
+    const userImages: string[] = []
     const gatewayAttachments: {
-      type: string;
-      mimeType: string;
-      content: string;
-    }[] = [];
+      type: string
+      mimeType: string
+      content: string
+    }[] = []
     if (this.pendingAttachments.length > 0) {
       for (const att of this.pendingAttachments) {
         if (att.base64 && att.mimeType) {
           // Image: send via attachments field (gateway saves to disk)
           gatewayAttachments.push({
-            type: "image",
+            type: 'image',
             mimeType: att.mimeType,
             content: att.base64,
-          });
+          })
           // Show preview in chat history
-          userImages.push(`data:${att.mimeType};base64,${att.base64}`);
+          userImages.push(`data:${att.mimeType};base64,${att.base64}`)
         } else {
           // Text files: append to message as before
-          fullMessage = (fullMessage ? fullMessage + "\n\n" : "") + att.content;
+          fullMessage = (fullMessage ? fullMessage + '\n\n' : '') + att.content
         }
       }
       if (!text) {
-        text = `📎 ${this.pendingAttachments.map((a) => a.name).join(", ")}`;
-        fullMessage = text;
+        text = `📎 ${this.pendingAttachments.map((a) => a.name).join(', ')}`
+        fullMessage = text
       }
-      this.pendingAttachments = [];
-      this.attachPreviewEl.addClass("oc-hidden");
+      this.pendingAttachments = []
+      this.attachPreviewEl.addClass('oc-hidden')
     }
 
     // Store the full message (incl. file blocks) locally so the just-sent
     // bubble collapses attachments the same way reloaded history does.
     this.messages.push({
-      role: "user",
+      role: 'user',
       text: fullMessage || text,
       images: userImages,
       timestamp: Date.now(),
-    });
-    await this.renderMessages();
+    })
+    await this.renderMessages()
 
-    const runId = generateId();
-    const sendSessionKey = this.activeSessionKey;
+    const runId = generateId()
+    const sendSessionKey = this.activeSessionKey
 
     // Create per-session stream state
     const ss = {
       runId,
-      text: "" as string | null,
+      text: '' as string | null,
       toolCalls: [] as string[],
       items: [] as StreamItem[],
       splitPoints: [] as number[],
       lastDeltaTime: 0,
       compactTimer: null as number | null,
       workingTimer: null as number | null,
-    };
-    this.streams.set(sendSessionKey, ss);
-    this.runToSession.set(runId, sendSessionKey);
+    }
+    this.streams.set(sendSessionKey, ss)
+    this.runToSession.set(runId, sendSessionKey)
 
     // Show UI for active tab
-    this.abortBtn.removeClass("oc-hidden");
-    this.typingEl.removeClass("oc-hidden");
-    const thinkText = this.typingEl.querySelector(".openclaw-typing-text");
-    if (thinkText) thinkText.textContent = "Thinking";
-    this.scrollToBottom();
+    this.abortBtn.removeClass('oc-hidden')
+    this.typingEl.removeClass('oc-hidden')
+    const thinkText = this.typingEl.querySelector('.openclaw-typing-text')
+    if (thinkText) thinkText.textContent = 'Thinking'
+    this.scrollToBottom()
 
     // Fallback: if no events at all after 15s, show generic status
     ss.compactTimer = window.setTimeout(() => {
-      const current = this.streams.get(sendSessionKey);
+      const current = this.streams.get(sendSessionKey)
       if (current?.runId === runId && !current.text) {
         // Only update DOM if this session is still active tab
         if (this.activeSessionKey === sendSessionKey) {
-          const tt = this.typingEl.querySelector(".openclaw-typing-text");
-          if (tt && tt.textContent === "Thinking")
-            tt.textContent = "Still thinking";
+          const tt = this.typingEl.querySelector('.openclaw-typing-text')
+          if (tt && tt.textContent === 'Thinking')
+            tt.textContent = 'Still thinking'
         }
       }
-    }, 15000);
+    }, 15000)
 
     try {
       const sendParams: Record<string, unknown> = {
@@ -2935,119 +2822,119 @@ class OpenClawChatView extends ItemView {
         message: fullMessage,
         deliver: false,
         idempotencyKey: runId,
-      };
-      if (gatewayAttachments.length > 0) {
-        sendParams.attachments = gatewayAttachments;
       }
-      await this.plugin.gateway.request("chat.send", sendParams);
+      if (gatewayAttachments.length > 0) {
+        sendParams.attachments = gatewayAttachments
+      }
+      await this.plugin.gateway.request('chat.send', sendParams)
     } catch (e) {
-      if (ss.compactTimer) window.clearTimeout(ss.compactTimer);
+      if (ss.compactTimer) window.clearTimeout(ss.compactTimer)
       this.messages.push({
-        role: "assistant",
+        role: 'assistant',
         text: `Error: ${e}`,
         images: [],
         timestamp: Date.now(),
-      });
-      this.streams.delete(sendSessionKey);
-      this.runToSession.delete(runId);
-      this.abortBtn.addClass("oc-hidden");
-      await this.renderMessages();
+      })
+      this.streams.delete(sendSessionKey)
+      this.runToSession.delete(runId)
+      this.abortBtn.addClass('oc-hidden')
+      await this.renderMessages()
     } finally {
-      this.sending = false;
-      this.sendBtn.disabled = false;
+      this.sending = false
+      this.sendBtn.disabled = false
     }
   }
 
   async abortMessage(): Promise<void> {
-    const ss = this.activeStream;
-    if (!this.plugin.gateway?.connected || !ss) return;
+    const ss = this.activeStream
+    if (!this.plugin.gateway?.connected || !ss) return
     try {
-      await this.plugin.gateway.request("chat.abort", {
+      await this.plugin.gateway.request('chat.abort', {
         sessionKey: this.activeSessionKey,
         runId: ss.runId,
-      });
+      })
     } catch {
       // ignore
     }
   }
 
   async updateContextMeter(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
       const result = (await this.plugin.gateway.request(
-        "sessions.list",
-        {},
-      )) as { sessions?: SessionInfo[] } | null;
-      const sessions: SessionInfo[] = result?.sessions || [];
+        'sessions.list',
+        {}
+      )) as { sessions?: SessionInfo[] } | null
+      const sessions: SessionInfo[] = result?.sessions || []
       // Find session matching current sessionKey (try exact match, then with agent prefix)
-      const sk = this.plugin.settings.sessionKey || "main";
+      const sk = this.plugin.settings.sessionKey || 'main'
       const session =
         sessions.find((s: SessionInfo) => s.key === sk) ||
         sessions.find(
-          (s: SessionInfo) => s.key === `${this.agentPrefix}${sk}`,
+          (s: SessionInfo) => s.key === `${this.agentPrefix}${sk}`
         ) ||
-        sessions.find((s: SessionInfo) => s.key.endsWith(`:${sk}`));
-      if (!session) return;
-      const used = session.totalTokens || 0;
-      const max = session.contextTokens || 200000;
-      const pct = Math.min(100, Math.round((used / max) * 100));
-      this.contextFillEl.setCssStyles({ width: pct + "%" });
+        sessions.find((s: SessionInfo) => s.key.endsWith(`:${sk}`))
+      if (!session) return
+      const used = session.totalTokens || 0
+      const max = session.contextTokens || 200000
+      const pct = Math.min(100, Math.round((used / max) * 100))
+      this.contextFillEl.setCssStyles({ width: pct + '%' })
       this.contextFillEl.className =
-        "openclaw-context-fill" +
+        'openclaw-context-fill' +
         (pct > 80
-          ? " openclaw-context-high"
+          ? ' openclaw-context-high'
           : pct > 60
-            ? " openclaw-context-mid"
-            : "");
-      this.contextLabelEl.textContent = `${pct}%`;
+            ? ' openclaw-context-mid'
+            : '')
+      this.contextLabelEl.textContent = `${pct}%`
       // Update active tab meter bar
       const activeFill = this.tabBarEl?.querySelector(
-        ".openclaw-tab.active .openclaw-tab-meter-fill",
-      ) as HTMLElement;
-      if (activeFill) activeFill.setCssStyles({ width: pct + "%" });
+        '.openclaw-tab.active .openclaw-tab-meter-fill'
+      ) as HTMLElement
+      if (activeFill) activeFill.setCssStyles({ width: pct + '%' })
       // Update model label from session data (but don't overwrite a recent manual switch)
-      const fullModel = session.model || "";
-      const modelCooldown = Date.now() - this.currentModelSetAt < 15000;
+      const fullModel = session.model || ''
+      const modelCooldown = Date.now() - this.currentModelSetAt < 15000
       if (fullModel && fullModel !== this.currentModel && !modelCooldown) {
-        this.currentModel = fullModel;
-        this.updateModelPill();
+        this.currentModel = fullModel
+        this.updateModelPill()
       }
       // Update session display name from gateway
       if (
         session.displayName &&
         session.displayName !== this.cachedSessionDisplayName
       ) {
-        this.cachedSessionDisplayName = session.displayName;
+        this.cachedSessionDisplayName = session.displayName
       }
       // Update bar controls (thinking/show steps) from session data
-      this.updateBarControlsFromSession(session);
+      this.updateBarControlsFromSession(session)
       // Detect session list changes and re-render tabs when needed
-      const agentPrefix = this.agentPrefix;
+      const agentPrefix = this.agentPrefix
       const currentSessionKeys = new Set(
         sessions
           .filter((s: SessionInfo) => {
-            if (!s.key.startsWith(agentPrefix)) return false;
-            const suffix = s.key.slice(agentPrefix.length);
-            return !suffix.includes(":");
+            if (!s.key.startsWith(agentPrefix)) return false
+            const suffix = s.key.slice(agentPrefix.length)
+            return !suffix.includes(':')
           })
-          .map((s: SessionInfo) => s.key),
-      );
+          .map((s: SessionInfo) => s.key)
+      )
       const trackedKeys = new Set(
-        this.tabSessions.map((t) => `${agentPrefix}${t.key}`),
-      );
-      const added = [...currentSessionKeys].some((k) => !trackedKeys.has(k));
-      const removed = [...trackedKeys].some((k) => !currentSessionKeys.has(k));
+        this.tabSessions.map((t) => `${agentPrefix}${t.key}`)
+      )
+      const added = [...currentSessionKeys].some((k) => !trackedKeys.has(k))
+      const removed = [...trackedKeys].some((k) => !currentSessionKeys.has(k))
       if ((added || removed) && !this.tabDeleteInProgress) {
         // If viewing a session that no longer exists, switch back to main
         if (removed && !currentSessionKeys.has(`${agentPrefix}${sk}`)) {
-          this.plugin.settings.sessionKey = "main";
-          await this.plugin.saveSettings();
-          this.messages = [];
-          this.messagesEl.empty();
-          await this.loadHistory();
-          this.updateStatus();
+          this.plugin.settings.sessionKey = 'main'
+          await this.plugin.saveSettings()
+          this.messages = []
+          this.messagesEl.empty()
+          await this.loadHistory()
+          this.updateStatus()
         }
-        await this.renderTabs();
+        await this.renderTabs()
       }
     } catch {
       /* ignore */
@@ -3057,469 +2944,469 @@ class OpenClawChatView extends ItemView {
   updateModelPill(): void {
     const model = this.currentModel
       ? this.shortModelName(this.currentModel)
-      : "model";
+      : 'model'
     if (this.modelLabelEl) {
-      this.modelLabelEl.empty();
+      this.modelLabelEl.empty()
       this.modelLabelEl.createSpan({
         text: model,
-        cls: "openclaw-ctx-pill-text",
-      });
+        cls: 'openclaw-ctx-pill-text',
+      })
       this.modelLabelEl.createSpan({
-        text: " ▾",
-        cls: "openclaw-ctx-pill-arrow",
-      });
+        text: ' ▾',
+        cls: 'openclaw-ctx-pill-arrow',
+      })
     }
     if (this.brainBtnEl) {
-      this.brainBtnEl.empty();
-      this.brainBtnEl.appendText(model);
+      this.brainBtnEl.empty()
+      this.brainBtnEl.appendText(model)
       this.brainBtnEl.createSpan({
-        text: " ▾",
-        cls: "openclaw-brain-btn-arrow",
-      });
+        text: ' ▾',
+        cls: 'openclaw-brain-btn-arrow',
+      })
     }
   }
 
   // ─── Bar Controls (thinking / show steps) ────────────────────────────
 
   private barControlDefaultLabel(defaultVal: string): string {
-    return defaultVal ? `default (${defaultVal})` : "default";
+    return defaultVal ? `default (${defaultVal})` : 'default'
   }
 
   updateBarControls(): void {
     if (this.thinkChipEl) {
       const label =
-        this.thinkingLevel || this.barControlDefaultLabel(this.thinkingDefault);
-      this.thinkChipEl.textContent = "think: " + label;
-      this.thinkChipEl.toggleClass("oc-bar-chip-active", !!this.thinkingLevel);
+        this.thinkingLevel || this.barControlDefaultLabel(this.thinkingDefault)
+      this.thinkChipEl.textContent = 'think: ' + label
+      this.thinkChipEl.toggleClass('oc-bar-chip-active', !!this.thinkingLevel)
     }
     if (this.verboseChipEl) {
       const label =
-        this.verboseLevel || this.barControlDefaultLabel(this.verboseDefault);
-      this.verboseChipEl.textContent = "show steps: " + label;
-      this.verboseChipEl.toggleClass("oc-bar-chip-active", !!this.verboseLevel);
+        this.verboseLevel || this.barControlDefaultLabel(this.verboseDefault)
+      this.verboseChipEl.textContent = 'show steps: ' + label
+      this.verboseChipEl.toggleClass('oc-bar-chip-active', !!this.verboseLevel)
     }
   }
 
   private async cycleBarControl(
-    field: "thinkingLevel" | "verboseLevel",
-    cycle: string[],
+    field: 'thinkingLevel' | 'verboseLevel',
+    cycle: string[]
   ): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     const current =
-      field === "thinkingLevel" ? this.thinkingLevel : this.verboseLevel;
-    const idx = cycle.indexOf(current);
-    const next = cycle[(idx + 1) % cycle.length];
-    const patch: Record<string, string | null> = {};
-    patch[field] = next || null; // null = clear override, inherit default
+      field === 'thinkingLevel' ? this.thinkingLevel : this.verboseLevel
+    const idx = cycle.indexOf(current)
+    const next = cycle[(idx + 1) % cycle.length]
+    const patch: Record<string, string | null> = {}
+    patch[field] = next || null // null = clear override, inherit default
     try {
-      await this.plugin.gateway.request("sessions.patch", {
+      await this.plugin.gateway.request('sessions.patch', {
         key: `${this.agentPrefix}${this.activeSessionKey}`,
         ...patch,
-      });
-      if (field === "thinkingLevel") this.thinkingLevel = next;
-      else this.verboseLevel = next;
-      this.updateBarControls();
+      })
+      if (field === 'thinkingLevel') this.thinkingLevel = next
+      else this.verboseLevel = next
+      this.updateBarControls()
     } catch (err: unknown) {
       new Notice(
-        `Failed to update ${field}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+        `Failed to update ${field}: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   }
 
   private updateBarControlsFromSession(session: SessionInfo): void {
-    this.thinkingLevel = session.thinkingLevel || "";
-    this.verboseLevel = session.verboseLevel || "";
-    if (session.thinkingDefault) this.thinkingDefault = session.thinkingDefault;
-    if (session.verboseDefault) this.verboseDefault = session.verboseDefault;
-    this.updateBarControls();
+    this.thinkingLevel = session.thinkingLevel || ''
+    this.verboseLevel = session.verboseLevel || ''
+    if (session.thinkingDefault) this.thinkingDefault = session.thinkingDefault
+    if (session.verboseDefault) this.verboseDefault = session.verboseDefault
+    this.updateBarControls()
   }
 
   private updateTabMode(): void {
-    if (!this.topBarEl || !this.tabBarEl || !this.hamburgerBarEl) return;
-    const containerWidth = this.containerEl.children[1]?.clientWidth || 400;
-    const tabCount = this.tabSessions.length + 1; // +1 for add button
-    const perTab = containerWidth / tabCount;
-    const shouldBeMobile = containerWidth < 400 || perTab < 60;
+    if (!this.topBarEl || !this.tabBarEl || !this.hamburgerBarEl) return
+    const containerWidth = this.containerEl.children[1]?.clientWidth || 400
+    const tabCount = this.tabSessions.length + 1 // +1 for add button
+    const perTab = containerWidth / tabCount
+    const shouldBeMobile = containerWidth < 400 || perTab < 60
     if (shouldBeMobile !== this.isMobileMode) {
-      this.isMobileMode = shouldBeMobile;
+      this.isMobileMode = shouldBeMobile
       if (shouldBeMobile) {
-        this.topBarEl.addClass("oc-hamburger-active");
-        this.tabBarEl.addClass("oc-hamburger-mode");
-        this.hamburgerBarEl.addClass("oc-visible");
-        this.profileBtnEl?.addClass("oc-hidden");
+        this.topBarEl.addClass('oc-hamburger-active')
+        this.tabBarEl.addClass('oc-hamburger-mode')
+        this.hamburgerBarEl.addClass('oc-visible')
+        this.profileBtnEl?.addClass('oc-hidden')
       } else {
-        this.topBarEl.removeClass("oc-hamburger-active");
-        this.tabBarEl.removeClass("oc-hamburger-mode");
-        this.hamburgerBarEl.removeClass("oc-visible");
-        this.hamburgerDropdownEl2.removeClass("oc-open");
-        this.profileBtnEl?.addClass("oc-hidden");
+        this.topBarEl.removeClass('oc-hamburger-active')
+        this.tabBarEl.removeClass('oc-hamburger-mode')
+        this.hamburgerBarEl.removeClass('oc-visible')
+        this.hamburgerDropdownEl2.removeClass('oc-open')
+        this.profileBtnEl?.addClass('oc-hidden')
       }
     }
-    if (shouldBeMobile) this.renderMobileTabSwitcher();
+    if (shouldBeMobile) this.renderMobileTabSwitcher()
   }
 
   private renderMobileTabSwitcher(): void {
-    const currentKey = this.plugin.settings.sessionKey || "main";
-    const currentIdx = this.tabSessions.findIndex((t) => t.key === currentKey);
+    const currentKey = this.plugin.settings.sessionKey || 'main'
+    const currentIdx = this.tabSessions.findIndex((t) => t.key === currentKey)
     const current =
-      currentIdx >= 0 ? this.tabSessions[currentIdx] : this.tabSessions[0];
-    const isHome = current.key === "main";
+      currentIdx >= 0 ? this.tabSessions[currentIdx] : this.tabSessions[0]
+    const isHome = current.key === 'main'
 
     // Label
     if (isHome) {
-      this.tabSwitcherLabelEl.empty();
+      this.tabSwitcherLabelEl.empty()
       createSvgIcon(this.tabSwitcherLabelEl, SVG_HOME_16, {
-        style: "vertical-align:-3px;opacity:0.7",
-      });
-      this.tabSwitcherLabelEl.title = "";
-      this.tabSwitcherLabelEl.removeClass("oc-cursor-default");
-      this.tabSwitcherLabelEl.ondblclick = null;
+        style: 'vertical-align:-3px;opacity:0.7',
+      })
+      this.tabSwitcherLabelEl.title = ''
+      this.tabSwitcherLabelEl.removeClass('oc-cursor-default')
+      this.tabSwitcherLabelEl.ondblclick = null
     } else {
-      this.tabSwitcherLabelEl.textContent = current.label;
-      this.tabSwitcherLabelEl.title = "Double-click to rename";
-      this.tabSwitcherLabelEl.addClass("oc-cursor-default");
+      this.tabSwitcherLabelEl.textContent = current.label
+      this.tabSwitcherLabelEl.title = 'Double-click to rename'
+      this.tabSwitcherLabelEl.addClass('oc-cursor-default')
       this.tabSwitcherLabelEl.ondblclick = (e: MouseEvent) => {
-        e.stopPropagation();
-        this.startSwitcherRename(current);
-      };
+        e.stopPropagation()
+        this.startSwitcherRename(current)
+      }
     }
 
     // Meter
     this.tabSwitcherMeterFillEl.setCssProps({
-      "--oc-meter-width": (current.pct || 0) + "%",
-    });
+      '--oc-meter-width': (current.pct || 0) + '%',
+    })
 
     // Minimal mobile header: hide arrows
-    this.tabArrowLeftEl.addClass("oc-hidden");
-    this.tabArrowRightEl.addClass("oc-hidden");
+    this.tabArrowLeftEl.addClass('oc-hidden')
+    this.tabArrowRightEl.addClass('oc-hidden')
 
     // Minimal mobile header: hide inline actions (reset/close)
-    this.tabSwitcherActionsEl.empty();
+    this.tabSwitcherActionsEl.empty()
   }
 
   private startSwitcherRename(tab: {
-    key: string;
-    label: string;
-    pct: number;
+    key: string
+    label: string
+    pct: number
   }): void {
-    const input = createEl("input");
-    input.type = "text";
-    input.value = tab.label;
-    input.maxLength = 30;
-    input.className = "oc-switcher-rename-input";
-    this.tabSwitcherLabelEl.textContent = "";
-    this.tabSwitcherLabelEl.appendChild(input);
-    input.focus();
-    input.select();
+    const input = createEl('input')
+    input.type = 'text'
+    input.value = tab.label
+    input.maxLength = 30
+    input.className = 'oc-switcher-rename-input'
+    this.tabSwitcherLabelEl.textContent = ''
+    this.tabSwitcherLabelEl.appendChild(input)
+    input.focus()
+    input.select()
     const finish = async (save: boolean) => {
-      const newName = input.value.trim();
+      const newName = input.value.trim()
       if (save && newName && newName !== tab.label) {
         try {
-          await this.plugin.gateway?.request("sessions.patch", {
+          await this.plugin.gateway?.request('sessions.patch', {
             key: `${this.agentPrefix}${tab.key}`,
             label: newName,
-          });
-          tab.label = newName;
+          })
+          tab.label = newName
         } catch {
           /* keep old name */
         }
       }
-      void this.renderTabs();
-      this.renderMobileTabSwitcher();
-    };
-    input.addEventListener("keydown", (ev: KeyboardEvent) => {
-      if (ev.key === "Enter") {
-        ev.preventDefault();
-        void finish(true);
+      void this.renderTabs()
+      this.renderMobileTabSwitcher()
+    }
+    input.addEventListener('keydown', (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        void finish(true)
       }
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        void finish(false);
+      if (ev.key === 'Escape') {
+        ev.preventDefault()
+        void finish(false)
       }
-      ev.stopPropagation();
-    });
-    input.addEventListener("blur", () => void finish(true));
-    input.addEventListener("click", (e) => e.stopPropagation());
+      ev.stopPropagation()
+    })
+    input.addEventListener('blur', () => void finish(true))
+    input.addEventListener('click', (e) => e.stopPropagation())
   }
 
   private renderHamburgerDropdown(): void {
-    this.hamburgerDropdownEl2.empty();
-    const currentKey = this.plugin.settings.sessionKey || "main";
+    this.hamburgerDropdownEl2.empty()
+    const currentKey = this.plugin.settings.sessionKey || 'main'
 
     for (const tab of this.tabSessions) {
-      const isHome = tab.key === "main";
-      const isCurrent = tab.key === currentKey;
+      const isHome = tab.key === 'main'
+      const isCurrent = tab.key === currentKey
       const item = this.hamburgerDropdownEl2.createDiv({
-        cls: `oc-hamburger-dropdown-item${isCurrent ? " oc-active" : ""}`,
-      });
+        cls: `oc-hamburger-dropdown-item${isCurrent ? ' oc-active' : ''}`,
+      })
 
       // Label
-      const label = item.createSpan({ cls: "oc-dd-label" });
+      const label = item.createSpan({ cls: 'oc-dd-label' })
       if (isHome) {
         createSvgIcon(label, SVG_HOME_16, {
-          style: "vertical-align:-3px;opacity:0.7",
-        });
-        label.appendText(" Home");
+          style: 'vertical-align:-3px;opacity:0.7',
+        })
+        label.appendText(' Home')
       } else {
-        label.textContent = tab.label;
-        label.title = "Double-click to rename";
-        label.addEventListener("dblclick", (e) => {
-          e.stopPropagation();
-          this.startDropdownRename(label, tab);
-        });
+        label.textContent = tab.label
+        label.title = 'Double-click to rename'
+        label.addEventListener('dblclick', (e) => {
+          e.stopPropagation()
+          this.startDropdownRename(label, tab)
+        })
       }
 
       // Context meter
-      const meter = item.createDiv({ cls: "oc-dd-meter" });
-      const fill = meter.createDiv({ cls: "oc-dd-meter-fill" });
-      fill.setCssProps({ "--oc-meter-width": tab.pct + "%" });
+      const meter = item.createDiv({ cls: 'oc-dd-meter' })
+      const fill = meter.createDiv({ cls: 'oc-dd-meter-fill' })
+      fill.setCssProps({ '--oc-meter-width': tab.pct + '%' })
 
       // Actions
-      const actions = item.createSpan({ cls: "oc-dd-actions" });
+      const actions = item.createSpan({ cls: 'oc-dd-actions' })
 
       // Reset
-      const resetBtn = actions.createSpan({ cls: "oc-dd-action-btn" });
-      createSvgIcon(resetBtn, SVG_RESET_12);
-      resetBtn.title = "Reset conversation";
-      resetBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.hamburgerDropdownEl2.removeClass("oc-open");
-        void this.resetTabAction(tab);
-      });
+      const resetBtn = actions.createSpan({ cls: 'oc-dd-action-btn' })
+      createSvgIcon(resetBtn, SVG_RESET_12)
+      resetBtn.title = 'Reset conversation'
+      resetBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.hamburgerDropdownEl2.removeClass('oc-open')
+        void this.resetTabAction(tab)
+      })
 
       // Close (real or spacer)
       if (!isHome) {
         const closeBtn = actions.createSpan({
-          text: "×",
-          cls: "oc-dd-action-btn oc-dd-action-close",
-        });
-        closeBtn.title = "Close tab";
-        closeBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.hamburgerDropdownEl2.removeClass("oc-open");
-          void this.closeTabAction(tab);
-        });
+          text: '×',
+          cls: 'oc-dd-action-btn oc-dd-action-close',
+        })
+        closeBtn.title = 'Close tab'
+        closeBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          this.hamburgerDropdownEl2.removeClass('oc-open')
+          void this.closeTabAction(tab)
+        })
       } else {
         actions.createSpan({
-          text: "×",
-          cls: "oc-dd-action-btn oc-visibility-hidden",
-        });
+          text: '×',
+          cls: 'oc-dd-action-btn oc-visibility-hidden',
+        })
       }
 
       // Click to switch
-      item.addEventListener("click", () => {
-        this.hamburgerDropdownEl2.removeClass("oc-open");
-        if (!isCurrent) this.switchToTab(tab);
-      });
+      item.addEventListener('click', () => {
+        this.hamburgerDropdownEl2.removeClass('oc-open')
+        if (!isCurrent) this.switchToTab(tab)
+      })
     }
 
     // + New Tab
     const addItem = this.hamburgerDropdownEl2.createDiv({
-      cls: "oc-hamburger-dropdown-item oc-justify-center oc-text-muted oc-opacity-07",
-    });
-    addItem.createSpan({ text: "+ New Tab" });
-    addItem.addEventListener("click", () => {
-      this.hamburgerDropdownEl2.removeClass("oc-open");
-      void this.createNewTabAction();
-    });
+      cls: 'oc-hamburger-dropdown-item oc-justify-center oc-text-muted oc-opacity-07',
+    })
+    addItem.createSpan({ text: '+ New Tab' })
+    addItem.addEventListener('click', () => {
+      this.hamburgerDropdownEl2.removeClass('oc-open')
+      void this.createNewTabAction()
+    })
   }
 
   private startDropdownRename(
     labelEl: HTMLElement,
-    tab: { key: string; label: string; pct: number },
+    tab: { key: string; label: string; pct: number }
   ): void {
-    const input = createEl("input", { cls: "oc-dd-rename-input" });
-    input.value = tab.label;
-    input.maxLength = 30;
-    labelEl.textContent = "";
-    labelEl.appendChild(input);
-    input.focus();
-    input.select();
+    const input = createEl('input', { cls: 'oc-dd-rename-input' })
+    input.value = tab.label
+    input.maxLength = 30
+    labelEl.textContent = ''
+    labelEl.appendChild(input)
+    input.focus()
+    input.select()
     const finish = async (save: boolean) => {
-      const newName = input.value.trim();
+      const newName = input.value.trim()
       if (save && newName && newName !== tab.label) {
         try {
-          await this.plugin.gateway?.request("sessions.patch", {
+          await this.plugin.gateway?.request('sessions.patch', {
             key: `${this.agentPrefix}${tab.key}`,
             label: newName,
-          });
-          tab.label = newName;
+          })
+          tab.label = newName
         } catch {
           /* keep old name */
         }
       }
-      labelEl.textContent = tab.label;
-      void this.renderTabs();
-      this.renderMobileTabSwitcher();
-    };
-    input.addEventListener("keydown", (ev: KeyboardEvent) => {
-      if (ev.key === "Enter") {
-        ev.preventDefault();
-        void finish(true);
+      labelEl.textContent = tab.label
+      void this.renderTabs()
+      this.renderMobileTabSwitcher()
+    }
+    input.addEventListener('keydown', (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault()
+        void finish(true)
       }
-      if (ev.key === "Escape") {
-        ev.preventDefault();
-        void finish(false);
+      if (ev.key === 'Escape') {
+        ev.preventDefault()
+        void finish(false)
       }
-      ev.stopPropagation();
-    });
-    input.addEventListener("blur", () => void finish(true));
-    input.addEventListener("click", (e) => e.stopPropagation());
+      ev.stopPropagation()
+    })
+    input.addEventListener('blur', () => void finish(true))
+    input.addEventListener('click', (e) => e.stopPropagation())
   }
 
   private switchToTab(tab: { key: string; label: string; pct: number }): void {
     void (async () => {
       // Show loading indicator
       if (this.isMobileMode && this.tabSwitcherLabelEl) {
-        this.tabSwitcherLabelEl.empty();
+        this.tabSwitcherLabelEl.empty()
         this.tabSwitcherLabelEl.createSpan({
-          cls: "oc-tab-loading-spinner",
-          text: "⟳",
-        });
-        this.tabSwitcherLabelEl.createSpan({ text: " Loading..." });
+          cls: 'oc-tab-loading-spinner',
+          text: '⟳',
+        })
+        this.tabSwitcherLabelEl.createSpan({ text: ' Loading...' })
       }
-      this.streamEl = null;
-      this.typingEl.addClass("oc-hidden");
-      this.abortBtn.addClass("oc-hidden");
-      this.hideBanner();
-      this.plugin.settings.sessionKey = tab.key;
-      await this.plugin.saveSettings();
-      this.messages = [];
-      this.messagesEl.empty();
-      this.cachedSessionDisplayName = tab.label;
-      await this.loadHistory();
-      this.restoreStreamUI();
-      await this.updateContextMeter();
-      void this.renderTabs();
-      this.updateStatus();
-    })();
+      this.streamEl = null
+      this.typingEl.addClass('oc-hidden')
+      this.abortBtn.addClass('oc-hidden')
+      this.hideBanner()
+      this.plugin.settings.sessionKey = tab.key
+      await this.plugin.saveSettings()
+      this.messages = []
+      this.messagesEl.empty()
+      this.cachedSessionDisplayName = tab.label
+      await this.loadHistory()
+      this.restoreStreamUI()
+      await this.updateContextMeter()
+      void this.renderTabs()
+      this.updateStatus()
+    })()
   }
 
   private async resetTabAction(tab: {
-    key: string;
-    label: string;
-    pct: number;
+    key: string
+    label: string
+    pct: number
   }): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
-    const currentKey = this.plugin.settings.sessionKey || "main";
-    const isHome = tab.key === "main";
-    const title = isHome ? "Reset Home tab?" : `Reset "${tab.label}"?`;
+    if (!this.plugin.gateway?.connected) return
+    const currentKey = this.plugin.settings.sessionKey || 'main'
+    const isHome = tab.key === 'main'
+    const title = isHome ? 'Reset Home tab?' : `Reset "${tab.label}"?`
     if (!this.isCloseConfirmDisabled()) {
       const confirmed = await this.confirmTabClose(
         title,
-        "This will clear the conversation.",
-      );
-      if (!confirmed) return;
+        'This will clear the conversation.'
+      )
+      if (!confirmed) return
     }
     try {
-      await this.plugin.gateway.request("chat.send", {
+      await this.plugin.gateway.request('chat.send', {
         sessionKey: tab.key,
-        message: "/reset",
+        message: '/reset',
         deliver: false,
-        idempotencyKey: "reset-" + Date.now(),
-      });
-      new Notice(isHome ? "Home tab reset" : `Reset: ${tab.label}`);
+        idempotencyKey: 'reset-' + Date.now(),
+      })
+      new Notice(isHome ? 'Home tab reset' : `Reset: ${tab.label}`)
       if (tab.key === currentKey) {
-        this.messages = [];
-        this.messagesEl.empty();
+        this.messages = []
+        this.messagesEl.empty()
       }
-      await this.updateContextMeter();
-      await this.renderTabs();
+      await this.updateContextMeter()
+      await this.renderTabs()
     } catch (err: unknown) {
       new Notice(
-        `Reset failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+        `Reset failed: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   }
 
   private async closeTabAction(tab: {
-    key: string;
-    label: string;
-    pct: number;
+    key: string
+    label: string
+    pct: number
   }): Promise<void> {
-    if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return;
-    const currentKey = this.plugin.settings.sessionKey || "main";
+    if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return
+    const currentKey = this.plugin.settings.sessionKey || 'main'
     if (!this.isCloseConfirmDisabled()) {
       const confirmed = await this.confirmTabClose(
-        "Close tab?",
-        `Close "${tab.label}"? Chat history will be lost.`,
-      );
-      if (!confirmed) return;
+        'Close tab?',
+        `Close "${tab.label}"? Chat history will be lost.`
+      )
+      if (!confirmed) return
     }
-    this.tabDeleteInProgress = true;
+    this.tabDeleteInProgress = true
     try {
       const deleted = await deleteSessionWithFallback(
         this.plugin.gateway,
-        `${this.agentPrefix}${tab.key}`,
-      );
+        `${this.agentPrefix}${tab.key}`
+      )
       new Notice(
-        deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`,
-      );
+        deleted ? `Closed: ${tab.label}` : `Could not delete: ${tab.label}`
+      )
     } catch (err: unknown) {
       new Notice(
-        `Close failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+        `Close failed: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
-    this.finishStream(tab.key);
+    this.finishStream(tab.key)
     if (tab.key === currentKey) {
-      this.plugin.settings.sessionKey = "main";
-      await this.plugin.saveSettings();
-      this.messages = [];
-      this.messagesEl.empty();
-      await this.loadHistory();
-      this.restoreStreamUI();
+      this.plugin.settings.sessionKey = 'main'
+      await this.plugin.saveSettings()
+      this.messages = []
+      this.messagesEl.empty()
+      await this.loadHistory()
+      this.restoreStreamUI()
     }
-    this.tabDeleteInProgress = false;
-    await this.renderTabs();
-    await this.updateContextMeter();
+    this.tabDeleteInProgress = false
+    await this.renderTabs()
+    await this.updateContextMeter()
   }
 
   private async createNewTabAction(): Promise<void> {
-    const existingKeys = new Set(this.tabSessions.map((t) => t.key));
-    let nextNum = 1;
-    while (existingKeys.has(`tab-${nextNum}`)) nextNum++;
-    const sessionKey = `tab-${nextNum}`;
+    const existingKeys = new Set(this.tabSessions.map((t) => t.key))
+    let nextNum = 1
+    while (existingKeys.has(`tab-${nextNum}`)) nextNum++
+    const sessionKey = `tab-${nextNum}`
     try {
-      await this.plugin.gateway?.request("chat.send", {
+      await this.plugin.gateway?.request('chat.send', {
         sessionKey: sessionKey,
-        message: "/new",
+        message: '/new',
         deliver: false,
-        idempotencyKey: "newtab-" + Date.now(),
-      });
-      this.plugin.settings.sessionKey = sessionKey;
-      await this.plugin.saveSettings();
-      this.messages = [];
-      this.messagesEl.empty();
-      await this.renderTabs();
-      new Notice("New tab created");
+        idempotencyKey: 'newtab-' + Date.now(),
+      })
+      this.plugin.settings.sessionKey = sessionKey
+      await this.plugin.saveSettings()
+      this.messages = []
+      this.messagesEl.empty()
+      await this.renderTabs()
+      new Notice('New tab created')
     } catch (err: unknown) {
-      new Notice(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+      new Notice(`Failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
   async renderTabs(): Promise<void> {
-    if (!this.tabBarEl || this.renderingTabs) return;
-    this.renderingTabs = true;
+    if (!this.tabBarEl || this.renderingTabs) return
+    this.renderingTabs = true
     try {
-      await this._renderTabsInner();
+      await this._renderTabsInner()
     } finally {
-      this.renderingTabs = false;
+      this.renderingTabs = false
     }
   }
 
   private async _renderTabsInner(): Promise<void> {
-    this.tabBarEl.empty();
-    const currentKey = this.plugin.settings.sessionKey || "main";
+    this.tabBarEl.empty()
+    const currentKey = this.plugin.settings.sessionKey || 'main'
 
     // Fetch sessions from gateway
-    let sessions: SessionInfo[] = [];
+    let sessions: SessionInfo[] = []
     if (this.plugin.gateway?.connected) {
       try {
         const result = (await this.plugin.gateway.request(
-          "sessions.list",
-          {},
-        )) as { sessions?: SessionInfo[] } | null;
-        sessions = result?.sessions || [];
+          'sessions.list',
+          {}
+        )) as { sessions?: SessionInfo[] } | null
+        sessions = result?.sessions || []
       } catch {
         /* use empty */
       }
@@ -3528,379 +3415,377 @@ class OpenClawChatView extends ItemView {
     // Filter: only show user conversation sessions (suffix has no colons)
     // This excludes channel sessions (telegram:, discord:, webchat:, etc.),
     // cron jobs, and sub-agents — all of which have colons in their suffix.
-    const agentPrefix = this.agentPrefix;
+    const agentPrefix = this.agentPrefix
     const convSessions = sessions.filter((s) => {
-      if (!s.key.startsWith(agentPrefix)) return false;
-      const suffix = s.key.slice(agentPrefix.length);
-      return !suffix.includes(":");
-    });
+      if (!s.key.startsWith(agentPrefix)) return false
+      const suffix = s.key.slice(agentPrefix.length)
+      return !suffix.includes(':')
+    })
 
     // Build tab list — ensure "main" is always first
-    this.tabSessions = [];
+    this.tabSessions = []
     const mainSession = convSessions.find(
-      (s) => s.key === `${this.agentPrefix}main`,
-    );
+      (s) => s.key === `${this.agentPrefix}main`
+    )
     if (mainSession) {
-      const used = mainSession.totalTokens || 0;
-      const max = mainSession.contextTokens || 200000;
+      const used = mainSession.totalTokens || 0
+      const max = mainSession.contextTokens || 200000
       this.tabSessions.push({
-        key: "main",
-        label: "Home",
+        key: 'main',
+        label: 'Home',
         pct: Math.min(100, Math.round((used / max) * 100)),
-      });
+      })
     } else {
-      this.tabSessions.push({ key: "main", label: "Home", pct: 0 });
+      this.tabSessions.push({ key: 'main', label: 'Home', pct: 0 })
     }
 
     // Add other sessions in creation order (oldest first), then apply saved order
     const others = convSessions
-      .filter((s) => s.key.slice(agentPrefix.length) !== "main")
+      .filter((s) => s.key.slice(agentPrefix.length) !== 'main')
       .sort(
         (a, b) =>
-          (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0),
-      );
+          (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0)
+      )
 
-    const savedOrder = this.plugin.settings.tabOrder || [];
+    const savedOrder = this.plugin.settings.tabOrder || []
     if (savedOrder.length > 0) {
-      const orderMap = new Map(
-        savedOrder.map((k: string, i: number) => [k, i]),
-      );
+      const orderMap = new Map(savedOrder.map((k: string, i: number) => [k, i]))
       others.sort((a, b) => {
-        const skA = a.key.slice(agentPrefix.length);
-        const skB = b.key.slice(agentPrefix.length);
-        const oA = orderMap.has(skA) ? orderMap.get(skA)! : 9999;
-        const oB = orderMap.has(skB) ? orderMap.get(skB)! : 9999;
-        if (oA !== oB) return oA - oB;
+        const skA = a.key.slice(agentPrefix.length)
+        const skB = b.key.slice(agentPrefix.length)
+        const oA = orderMap.has(skA) ? orderMap.get(skA)! : 9999
+        const oB = orderMap.has(skB) ? orderMap.get(skB)! : 9999
+        if (oA !== oB) return oA - oB
         return (
           (a.createdAt || a.updatedAt || 0) - (b.createdAt || b.updatedAt || 0)
-        );
-      });
+        )
+      })
     }
 
     for (const s of others) {
-      const sk = s.key.slice(agentPrefix.length);
-      const used = s.totalTokens || 0;
-      const max = s.contextTokens || 200000;
-      const pct = Math.min(100, Math.round((used / max) * 100));
-      const label = s.label || s.displayName || "Untitled";
-      this.tabSessions.push({ key: sk, label, pct });
+      const sk = s.key.slice(agentPrefix.length)
+      const used = s.totalTokens || 0
+      const max = s.contextTokens || 200000
+      const pct = Math.min(100, Math.round((used / max) * 100))
+      const label = s.label || s.displayName || 'Untitled'
+      this.tabSessions.push({ key: sk, label, pct })
     }
 
     // Render each tab
     for (const tab of this.tabSessions) {
-      const isCurrent = tab.key === currentKey;
-      const isHome = tab.key === "main";
-      const tabCls = `openclaw-tab${isCurrent ? " active" : ""}${isHome ? " openclaw-tab-home" : ""}`;
-      const tabEl = this.tabBarEl.createDiv({ cls: tabCls });
+      const isCurrent = tab.key === currentKey
+      const isHome = tab.key === 'main'
+      const tabCls = `openclaw-tab${isCurrent ? ' active' : ''}${isHome ? ' openclaw-tab-home' : ''}`
+      const tabEl = this.tabBarEl.createDiv({ cls: tabCls })
 
       // Row: label + action button
-      const row = tabEl.createDiv({ cls: "openclaw-tab-row" });
-      const labelSpan = row.createSpan({ cls: "openclaw-tab-label" });
+      const row = tabEl.createDiv({ cls: 'openclaw-tab-row' })
+      const labelSpan = row.createSpan({ cls: 'openclaw-tab-label' })
 
       if (isHome) {
         // Home tab: house icon only, non-renameable
-        createSvgIcon(labelSpan, SVG_HOME_18, { style: "vertical-align:-3px" });
+        createSvgIcon(labelSpan, SVG_HOME_18, { style: 'vertical-align:-3px' })
       } else {
-        labelSpan.textContent = tab.label;
+        labelSpan.textContent = tab.label
         // Double-click to rename (non-Home tabs only)
-        labelSpan.title = "Double-click to rename";
-        labelSpan.addEventListener("dblclick", (e) => {
-          e.stopPropagation();
-          const input = createEl("input", { cls: "openclaw-tab-label-input" });
-          input.value = tab.label;
-          input.maxLength = 30;
-          labelSpan.replaceWith(input);
-          input.focus();
-          input.select();
+        labelSpan.title = 'Double-click to rename'
+        labelSpan.addEventListener('dblclick', (e) => {
+          e.stopPropagation()
+          const input = createEl('input', { cls: 'openclaw-tab-label-input' })
+          input.value = tab.label
+          input.maxLength = 30
+          labelSpan.replaceWith(input)
+          input.focus()
+          input.select()
           const finish = async (save: boolean) => {
-            const newName = input.value.trim();
+            const newName = input.value.trim()
             if (save && newName && newName !== tab.label) {
               try {
-                await this.plugin.gateway?.request("sessions.patch", {
+                await this.plugin.gateway?.request('sessions.patch', {
                   key: `${this.agentPrefix}${tab.key}`,
                   label: newName,
-                });
-                tab.label = newName;
+                })
+                tab.label = newName
               } catch {
                 /* keep old name */
               }
             }
-            input.replaceWith(labelSpan);
-            labelSpan.textContent = tab.label;
-            void this.renderTabs();
-          };
-          input.addEventListener("keydown", (ev: KeyboardEvent) => {
-            if (ev.key === "Enter") {
-              ev.preventDefault();
-              void finish(true);
+            input.replaceWith(labelSpan)
+            labelSpan.textContent = tab.label
+            void this.renderTabs()
+          }
+          input.addEventListener('keydown', (ev: KeyboardEvent) => {
+            if (ev.key === 'Enter') {
+              ev.preventDefault()
+              void finish(true)
             }
-            if (ev.key === "Escape") {
-              ev.preventDefault();
-              void finish(false);
+            if (ev.key === 'Escape') {
+              ev.preventDefault()
+              void finish(false)
             }
-          });
-          input.addEventListener("blur", () => void finish(true));
-        });
+          })
+          input.addEventListener('blur', () => void finish(true))
+        })
       }
-      row.appendChild(labelSpan);
+      row.appendChild(labelSpan)
 
       // Action button: Home gets refresh icon, others get ×
       if (isHome) {
-        const resetBtn = row.createSpan({ cls: "openclaw-tab-close" });
-        createSvgIcon(resetBtn, SVG_RESET_11, { style: "vertical-align:-1px" });
-        resetBtn.title = "Reset conversation";
-        resetBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
+        const resetBtn = row.createSpan({ cls: 'openclaw-tab-close' })
+        createSvgIcon(resetBtn, SVG_RESET_11, { style: 'vertical-align:-1px' })
+        resetBtn.title = 'Reset conversation'
+        resetBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
           void (async () => {
-            if (!this.plugin.gateway?.connected) return;
+            if (!this.plugin.gateway?.connected) return
             // Confirm before reset
             if (!this.isCloseConfirmDisabled()) {
               const confirmed = await this.confirmTabClose(
-                "Reset Home tab?",
-                "This will clear the conversation.",
-              );
-              if (!confirmed) return;
+                'Reset Home tab?',
+                'This will clear the conversation.'
+              )
+              if (!confirmed) return
             }
             try {
-              await this.plugin.gateway.request("chat.send", {
+              await this.plugin.gateway.request('chat.send', {
                 sessionKey: tab.key,
-                message: "/reset",
+                message: '/reset',
                 deliver: false,
-                idempotencyKey: "reset-" + Date.now(),
-              });
-              new Notice("Home tab reset");
+                idempotencyKey: 'reset-' + Date.now(),
+              })
+              new Notice('Home tab reset')
               if (tab.key === currentKey) {
-                this.messages = [];
-                this.messagesEl.empty();
+                this.messages = []
+                this.messagesEl.empty()
               }
-              await this.updateContextMeter();
-              await this.renderTabs();
+              await this.updateContextMeter()
+              await this.renderTabs()
             } catch (err: unknown) {
               new Notice(
-                `Reset failed: ${err instanceof Error ? err.message : String(err)}`,
-              );
+                `Reset failed: ${err instanceof Error ? err.message : String(err)}`
+              )
             }
-          })();
-        });
+          })()
+        })
       } else {
         // Other tabs: reset button (↻) + close button (×)
         const tabResetBtn = row.createSpan({
-          cls: "openclaw-tab-close openclaw-tab-reset",
-        });
+          cls: 'openclaw-tab-close openclaw-tab-reset',
+        })
         createSvgIcon(tabResetBtn, SVG_RESET_10, {
-          style: "vertical-align:-1px",
-        });
-        tabResetBtn.title = "Reset conversation";
-        tabResetBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
+          style: 'vertical-align:-1px',
+        })
+        tabResetBtn.title = 'Reset conversation'
+        tabResetBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
           void (async () => {
-            if (!this.plugin.gateway?.connected) return;
+            if (!this.plugin.gateway?.connected) return
             if (!this.isCloseConfirmDisabled()) {
               const confirmed = await this.confirmTabClose(
                 `Reset "${tab.label}"?`,
-                "This will clear the conversation.",
-              );
-              if (!confirmed) return;
+                'This will clear the conversation.'
+              )
+              if (!confirmed) return
             }
             try {
-              await this.plugin.gateway.request("chat.send", {
+              await this.plugin.gateway.request('chat.send', {
                 sessionKey: tab.key,
-                message: "/reset",
+                message: '/reset',
                 deliver: false,
-                idempotencyKey: "reset-" + Date.now(),
-              });
-              new Notice(`Reset: ${tab.label}`);
+                idempotencyKey: 'reset-' + Date.now(),
+              })
+              new Notice(`Reset: ${tab.label}`)
               if (tab.key === currentKey) {
-                this.messages = [];
-                this.messagesEl.empty();
+                this.messages = []
+                this.messagesEl.empty()
               }
-              await this.updateContextMeter();
-              await this.renderTabs();
+              await this.updateContextMeter()
+              await this.renderTabs()
             } catch (err: unknown) {
               new Notice(
-                `Reset failed: ${err instanceof Error ? err.message : String(err)}`,
-              );
+                `Reset failed: ${err instanceof Error ? err.message : String(err)}`
+              )
             }
-          })();
-        });
+          })()
+        })
 
         const tabCloseBtn = row.createSpan({
-          text: "×",
-          cls: "openclaw-tab-close",
-        });
-        tabCloseBtn.title = "Close tab";
-        tabCloseBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
+          text: '×',
+          cls: 'openclaw-tab-close',
+        })
+        tabCloseBtn.title = 'Close tab'
+        tabCloseBtn.addEventListener('click', (e) => {
+          e.stopPropagation()
           void (async () => {
             if (!this.plugin.gateway?.connected || this.tabDeleteInProgress)
-              return;
+              return
             if (!this.isCloseConfirmDisabled()) {
               const confirmed = await this.confirmTabClose(
-                "Close tab?",
-                `Close "${tab.label}"? Chat history will be lost.`,
-              );
-              if (!confirmed) return;
+                'Close tab?',
+                `Close "${tab.label}"? Chat history will be lost.`
+              )
+              if (!confirmed) return
             }
-            this.tabDeleteInProgress = true;
+            this.tabDeleteInProgress = true
             try {
               const deleted = await deleteSessionWithFallback(
                 this.plugin.gateway,
-                `${this.agentPrefix}${tab.key}`,
-              );
+                `${this.agentPrefix}${tab.key}`
+              )
               new Notice(
                 deleted
                   ? `Closed: ${tab.label}`
-                  : `Could not delete: ${tab.label}`,
-              );
+                  : `Could not delete: ${tab.label}`
+              )
             } catch (err: unknown) {
               new Notice(
-                `Close failed: ${err instanceof Error ? err.message : String(err)}`,
-              );
+                `Close failed: ${err instanceof Error ? err.message : String(err)}`
+              )
             }
-            this.finishStream(tab.key);
+            this.finishStream(tab.key)
             if (tab.key === currentKey) {
-              this.plugin.settings.sessionKey = "main";
-              await this.plugin.saveSettings();
-              this.messages = [];
-              this.messagesEl.empty();
-              await this.loadHistory();
-              this.restoreStreamUI();
+              this.plugin.settings.sessionKey = 'main'
+              await this.plugin.saveSettings()
+              this.messages = []
+              this.messagesEl.empty()
+              await this.loadHistory()
+              this.restoreStreamUI()
             }
-            this.tabDeleteInProgress = false;
-            await this.renderTabs();
-            await this.updateContextMeter();
-          })();
-        });
+            this.tabDeleteInProgress = false
+            await this.renderTabs()
+            await this.updateContextMeter()
+          })()
+        })
       }
 
       // Progress bar (gray container, black fill)
-      const meter = tabEl.createDiv({ cls: "openclaw-tab-meter" });
-      const fill = meter.createDiv({ cls: "openclaw-tab-meter-fill" });
-      fill.setCssStyles({ width: tab.pct + "%" });
+      const meter = tabEl.createDiv({ cls: 'openclaw-tab-meter' })
+      const fill = meter.createDiv({ cls: 'openclaw-tab-meter-fill' })
+      fill.setCssStyles({ width: tab.pct + '%' })
 
       // Drag to reorder (non-Home tabs only)
       if (!isHome) {
-        tabEl.draggable = true;
-        tabEl.addEventListener("dragstart", (e: DragEvent) => {
-          e.dataTransfer?.setData("text/plain", tab.key);
-          tabEl.addClass("oc-dragging");
-        });
-        tabEl.addEventListener("dragend", () => {
-          tabEl.removeClass("oc-dragging");
+        tabEl.draggable = true
+        tabEl.addEventListener('dragstart', (e: DragEvent) => {
+          e.dataTransfer?.setData('text/plain', tab.key)
+          tabEl.addClass('oc-dragging')
+        })
+        tabEl.addEventListener('dragend', () => {
+          tabEl.removeClass('oc-dragging')
           this.tabBarEl
-            .querySelectorAll(".oc-drag-over")
+            .querySelectorAll('.oc-drag-over')
             .forEach((el: Element) =>
-              (el as HTMLElement).classList.remove("oc-drag-over"),
-            );
-        });
-        tabEl.addEventListener("dragover", (e: DragEvent) => {
-          e.preventDefault();
-          tabEl.addClass("oc-drag-over");
-        });
-        tabEl.addEventListener("dragleave", () => {
-          tabEl.removeClass("oc-drag-over");
-        });
-        tabEl.addEventListener("drop", (e: DragEvent) => {
-          e.preventDefault();
-          tabEl.removeClass("oc-drag-over");
-          const draggedKey = e.dataTransfer?.getData("text/plain");
+              (el as HTMLElement).classList.remove('oc-drag-over')
+            )
+        })
+        tabEl.addEventListener('dragover', (e: DragEvent) => {
+          e.preventDefault()
+          tabEl.addClass('oc-drag-over')
+        })
+        tabEl.addEventListener('dragleave', () => {
+          tabEl.removeClass('oc-drag-over')
+        })
+        tabEl.addEventListener('drop', (e: DragEvent) => {
+          e.preventDefault()
+          tabEl.removeClass('oc-drag-over')
+          const draggedKey = e.dataTransfer?.getData('text/plain')
           if (draggedKey && draggedKey !== tab.key) {
-            void this.reorderTabs(draggedKey, tab.key);
+            void this.reorderTabs(draggedKey, tab.key)
           }
-        });
+        })
       }
 
       // Click to switch
       if (!isCurrent) {
         tabEl.addEventListener(
-          "click",
+          'click',
           () =>
             void (async () => {
               // Clear DOM from old tab
-              this.streamEl = null;
-              this.typingEl.addClass("oc-hidden");
-              this.abortBtn.addClass("oc-hidden");
-              this.hideBanner();
+              this.streamEl = null
+              this.typingEl.addClass('oc-hidden')
+              this.abortBtn.addClass('oc-hidden')
+              this.hideBanner()
 
-              this.plugin.settings.sessionKey = tab.key;
-              await this.plugin.saveSettings();
-              this.messages = [];
-              this.messagesEl.empty();
-              this.cachedSessionDisplayName = tab.label;
-              await this.loadHistory();
+              this.plugin.settings.sessionKey = tab.key
+              await this.plugin.saveSettings()
+              this.messages = []
+              this.messagesEl.empty()
+              this.cachedSessionDisplayName = tab.label
+              await this.loadHistory()
 
               // Restore stream UI if new tab has an active stream
-              this.restoreStreamUI();
+              this.restoreStreamUI()
 
-              await this.updateContextMeter();
-              void this.renderTabs();
-              this.updateStatus();
-            })(),
-        );
+              await this.updateContextMeter()
+              void this.renderTabs()
+              this.updateStatus()
+            })()
+        )
       }
     }
 
     // + button to add new tab
     const addBtn = this.tabBarEl.createDiv({
-      cls: "openclaw-tab openclaw-tab-add",
-    });
-    addBtn.createSpan({ text: "+", cls: "openclaw-tab-label" });
+      cls: 'openclaw-tab openclaw-tab-add',
+    })
+    addBtn.createSpan({ text: '+', cls: 'openclaw-tab-label' })
     addBtn.addEventListener(
-      "click",
+      'click',
       () =>
         void (async () => {
           // Find next available session key (collision-free, based on keys not labels)
-          const existingKeys = new Set(this.tabSessions.map((t) => t.key));
-          let nextNum = 1;
-          while (existingKeys.has(`tab-${nextNum}`)) nextNum++;
-          const sessionKey = `tab-${nextNum}`;
+          const existingKeys = new Set(this.tabSessions.map((t) => t.key))
+          let nextNum = 1
+          while (existingKeys.has(`tab-${nextNum}`)) nextNum++
+          const sessionKey = `tab-${nextNum}`
           try {
-            await this.plugin.gateway?.request("chat.send", {
+            await this.plugin.gateway?.request('chat.send', {
               sessionKey: sessionKey,
-              message: "/new",
+              message: '/new',
               deliver: false,
-              idempotencyKey: "newtab-" + Date.now(),
-            });
-            await new Promise((r) => window.setTimeout(r, 500));
+              idempotencyKey: 'newtab-' + Date.now(),
+            })
+            await new Promise((r) => window.setTimeout(r, 500))
             try {
-              await this.plugin.gateway?.request("sessions.patch", {
+              await this.plugin.gateway?.request('sessions.patch', {
                 key: `${this.agentPrefix}${sessionKey}`,
-                label: "Untitled",
-              });
+                label: 'Untitled',
+              })
             } catch {
               /* label optional */
             }
             // Switch to it - clear old tab's stream UI
-            this.streamEl = null;
-            this.typingEl.addClass("oc-hidden");
-            this.abortBtn.addClass("oc-hidden");
-            this.hideBanner();
+            this.streamEl = null
+            this.typingEl.addClass('oc-hidden')
+            this.abortBtn.addClass('oc-hidden')
+            this.hideBanner()
 
-            this.plugin.settings.sessionKey = sessionKey;
-            this.messages = [];
+            this.plugin.settings.sessionKey = sessionKey
+            this.messages = []
             if (this.plugin.settings.streamItemsMap)
-              this.plugin.settings.streamItemsMap = {};
-            await this.plugin.saveSettings();
-            this.messagesEl.empty();
-            await this.renderTabs();
-            await this.updateContextMeter();
-            new Notice("New tab");
+              this.plugin.settings.streamItemsMap = {}
+            await this.plugin.saveSettings()
+            this.messagesEl.empty()
+            await this.renderTabs()
+            await this.updateContextMeter()
+            new Notice('New tab')
           } catch (err: unknown) {
             new Notice(
-              `Failed to create tab: ${err instanceof Error ? err.message : String(err)}`,
-            );
+              `Failed to create tab: ${err instanceof Error ? err.message : String(err)}`
+            )
           }
-        })(),
-    );
+        })()
+    )
 
     // Check if mobile mode needed
-    this.updateTabMode();
+    this.updateTabMode()
   }
 
   // ─── Confirm close dialog ──────────────────────────────────────────
 
   private isCloseConfirmDisabled(): boolean {
-    return this.plugin.getCloseConfirmDisabled();
+    return this.plugin.getCloseConfirmDisabled()
   }
 
   private confirmTabClose(title: string, msg: string): Promise<boolean> {
@@ -3911,516 +3796,516 @@ class OpenClawChatView extends ItemView {
         msg,
         (result, dontAsk) => {
           if (result && dontAsk) {
-            this.plugin.setCloseConfirmDisabled(true);
+            this.plugin.setCloseConfirmDisabled(true)
           }
-          resolve(result);
-        },
-      );
-      modal.open();
-    });
+          resolve(result)
+        }
+      )
+      modal.open()
+    })
   }
 
   // ─── Touch gestures ──────────────────────────────────────────────
 
   private initTouchGestures(): void {
-    let touchStartY = 0;
-    let pulling = false;
+    let touchStartY = 0
+    let pulling = false
 
     this.messagesEl.addEventListener(
-      "touchstart",
+      'touchstart',
       (e: TouchEvent) => {
-        touchStartY = e.touches[0].clientY;
-        pulling = false;
+        touchStartY = e.touches[0].clientY
+        pulling = false
       },
-      { passive: true },
-    );
+      { passive: true }
+    )
 
     this.messagesEl.addEventListener(
-      "touchmove",
+      'touchmove',
       (e: TouchEvent) => {
-        const deltaY = e.touches[0].clientY - touchStartY;
+        const deltaY = e.touches[0].clientY - touchStartY
         if (this.messagesEl.scrollTop <= 0 && deltaY > 60) {
-          pulling = true;
+          pulling = true
         }
       },
-      { passive: true },
-    );
+      { passive: true }
+    )
 
     this.messagesEl.addEventListener(
-      "touchend",
+      'touchend',
       () => {
         // Pull-to-refresh
         if (pulling) {
-          pulling = false;
-          this.messages = [];
-          this.messagesEl.empty();
-          void this.loadHistory().then(() => this.updateContextMeter());
-          new Notice("Refreshed");
+          pulling = false
+          this.messages = []
+          this.messagesEl.empty()
+          void this.loadHistory().then(() => this.updateContextMeter())
+          new Notice('Refreshed')
         }
       },
-      { passive: true },
-    );
+      { passive: true }
+    )
   }
 
   private contextColor(pct: number): string {
-    if (pct > 80) return "#c44";
-    if (pct > 60) return "#d4a843";
-    if (pct > 30) return "#7a7";
-    return "#5a5";
+    if (pct > 80) return '#c44'
+    if (pct > 60) return '#d4a843'
+    if (pct > 30) return '#7a7'
+    return '#5a5'
   }
 
   async resetCurrentTab(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
-      await this.plugin.gateway.request("chat.send", {
-        sessionKey: this.plugin.settings.sessionKey || "main",
-        message: "/reset",
+      await this.plugin.gateway.request('chat.send', {
+        sessionKey: this.plugin.settings.sessionKey || 'main',
+        message: '/reset',
         deliver: false,
-        idempotencyKey: "reset-" + Date.now(),
-      });
-      this.messages = [];
+        idempotencyKey: 'reset-' + Date.now(),
+      })
+      this.messages = []
       if (this.plugin.settings.streamItemsMap)
-        this.plugin.settings.streamItemsMap = {};
-      await this.plugin.saveSettings();
-      this.messagesEl.empty();
-      await this.updateContextMeter();
-      await this.renderTabs();
-      new Notice("Tab reset");
+        this.plugin.settings.streamItemsMap = {}
+      await this.plugin.saveSettings()
+      this.messagesEl.empty()
+      await this.updateContextMeter()
+      await this.renderTabs()
+      new Notice('Tab reset')
     } catch (e) {
-      new Notice(`Reset failed: ${e}`);
+      new Notice(`Reset failed: ${e}`)
     }
   }
 
   async reorderTabs(draggedKey: string, targetKey: string): Promise<void> {
     const keys = this.tabSessions
-      .filter((t) => t.key !== "main")
-      .map((t) => t.key);
-    const fromIdx = keys.indexOf(draggedKey);
-    const toIdx = keys.indexOf(targetKey);
-    if (fromIdx === -1 || toIdx === -1) return;
-    keys.splice(fromIdx, 1);
-    keys.splice(toIdx, 0, draggedKey);
-    this.plugin.settings.tabOrder = keys;
-    await this.plugin.saveSettings();
-    await this.renderTabs();
+      .filter((t) => t.key !== 'main')
+      .map((t) => t.key)
+    const fromIdx = keys.indexOf(draggedKey)
+    const toIdx = keys.indexOf(targetKey)
+    if (fromIdx === -1 || toIdx === -1) return
+    keys.splice(fromIdx, 1)
+    keys.splice(toIdx, 0, draggedKey)
+    this.plugin.settings.tabOrder = keys
+    await this.plugin.saveSettings()
+    await this.renderTabs()
   }
 
   openModelPicker(): void {
-    new ModelPickerModal(this.app, this.plugin, this).open();
+    new ModelPickerModal(this.app, this.plugin, this).open()
   }
 
   async compactSession(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
-      this.showBanner("Compacting context...");
-      await this.plugin.gateway.request("chat.send", {
+      this.showBanner('Compacting context...')
+      await this.plugin.gateway.request('chat.send', {
         sessionKey: this.plugin.settings.sessionKey,
-        message: "/compact",
+        message: '/compact',
         deliver: false,
-        idempotencyKey: "compact-" + Date.now(),
-      });
+        idempotencyKey: 'compact-' + Date.now(),
+      })
       // Poll context meter to animate the decrease
       const pollInterval = window.setInterval(
         () =>
           void (async () => {
-            await this.updateContextMeter();
+            await this.updateContextMeter()
           })(),
-        2000,
-      );
+        2000
+      )
       window.setTimeout(
         () =>
           void (async () => {
-            window.clearInterval(pollInterval);
-            this.hideBanner();
-            await this.loadHistory();
-            await this.updateContextMeter();
+            window.clearInterval(pollInterval)
+            this.hideBanner()
+            await this.loadHistory()
+            await this.updateContextMeter()
           })(),
-        12000,
-      );
+        12000
+      )
     } catch (e) {
-      this.hideBanner();
-      new Notice(`Compact failed: ${e}`);
+      this.hideBanner()
+      new Notice(`Compact failed: ${e}`)
     }
   }
 
   async newSession(): Promise<void> {
-    if (!this.plugin.gateway?.connected) return;
+    if (!this.plugin.gateway?.connected) return
     try {
-      await this.plugin.gateway.request("chat.send", {
+      await this.plugin.gateway.request('chat.send', {
         sessionKey: this.plugin.settings.sessionKey,
-        message: "/new",
+        message: '/new',
         deliver: false,
-        idempotencyKey: "new-" + Date.now(),
-      });
-      this.messages = [];
+        idempotencyKey: 'new-' + Date.now(),
+      })
+      this.messages = []
       if (this.plugin.settings.streamItemsMap)
-        this.plugin.settings.streamItemsMap = {};
-      await this.plugin.saveSettings();
-      this.messagesEl.empty();
-      await this.updateContextMeter();
-      new Notice("New session started");
+        this.plugin.settings.streamItemsMap = {}
+      await this.plugin.saveSettings()
+      this.messagesEl.empty()
+      await this.updateContextMeter()
+      new Notice('New session started')
     } catch (e) {
-      new Notice(`New session failed: ${e}`);
+      new Notice(`New session failed: ${e}`)
     }
   }
 
   shortModelName(fullId: string): string {
     // "anthropic/claude-opus-4-6" -> "opus-4-6" (selected display)
     // Strip provider prefix, strip "claude-" prefix for brevity
-    const model = fullId.includes("/") ? fullId.split("/")[1] : fullId;
-    return model.replace(/^claude-/, "");
+    const model = fullId.includes('/') ? fullId.split('/')[1] : fullId
+    return model.replace(/^claude-/, '')
   }
 
   /** Recompute the @-mention dropdown from the current caret position. */
   private updateMentionSuggest(): void {
-    const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length;
-    const mention = detectMention(this.inputEl.value, cursor);
+    const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length
+    const mention = detectMention(this.inputEl.value, cursor)
     if (!mention) {
-      this.closeMentionSuggest();
-      return;
+      this.closeMentionSuggest()
+      return
     }
-    this.activeMention = mention;
-    const items = this.mentionItems(mention.query);
-    if (this.suggest.isOpen) this.suggest.update(items);
-    else this.suggest.show(items);
+    this.activeMention = mention
+    const items = this.mentionItems(mention.query)
+    if (this.suggest.isOpen) this.suggest.update(items)
+    else this.suggest.show(items)
   }
 
   private closeMentionSuggest(): void {
-    this.activeMention = null;
-    this.suggest.close();
+    this.activeMention = null
+    this.suggest.close()
   }
 
   /** Rank vault files for the dropdown, using Obsidian fuzzy search when querying. */
   private mentionItems(query: string): SuggestItem[] {
     const files = this.app.vault
       .getFiles()
-      .map((f) => ({ path: f.path, mtime: f.stat.mtime }));
-    const matcher = query ? prepareFuzzySearch(query) : null;
+      .map((f) => ({ path: f.path, mtime: f.stat.mtime }))
+    const matcher = query ? prepareFuzzySearch(query) : null
     const score = (_q: string, path: string): number | null => {
-      if (!matcher) return 0;
-      const result = matcher(path);
-      return result ? result.score : null;
-    };
+      if (!matcher) return 0
+      const result = matcher(path)
+      return result ? result.score : null
+    }
     return rankMentions(files, query, score, 50).map((f) => ({
       path: f.path,
       display: f.path,
-    }));
+    }))
   }
 
   /** Handle a file chosen from the @-mention dropdown. */
   private async chooseMention(item: SuggestItem): Promise<void> {
-    const mention = this.activeMention;
-    this.closeMentionSuggest();
+    const mention = this.activeMention
+    this.closeMentionSuggest()
 
-    const file = this.app.vault.getAbstractFileByPath(item.path);
-    if (!(file instanceof TFile)) return;
+    const file = this.app.vault.getAbstractFileByPath(item.path)
+    if (!(file instanceof TFile)) return
 
     // Insert the mention as inline text (`@<path>`) where the @query was.
-    const token = `@${file.path}`;
-    if (mention) this.insertMentionText(mention, token);
+    const token = `@${file.path}`
+    if (mention) this.insertMentionText(mention, token)
 
     try {
-      const base = { name: file.name, inline: true, token };
-      const kind = classifyFile({ name: file.name, mimeType: "" });
-      if (kind === "image") {
+      const base = { name: file.name, inline: true, token }
+      const kind = classifyFile({ name: file.name, mimeType: '' })
+      if (kind === 'image') {
         const base64 = arrayBufferToBase64(
-          await this.app.vault.readBinary(file),
-        );
+          await this.app.vault.readBinary(file)
+        )
         this.pendingAttachments.push({
           ...base,
           content: `[Attached image: ${file.name}]`,
           base64,
           mimeType: imageMimeFromExt(file.extension),
           vaultPath: file.path,
-        });
-      } else if (kind === "text") {
-        const content = await this.app.vault.read(file);
+        })
+      } else if (kind === 'text') {
+        const content = await this.app.vault.read(file)
         this.pendingAttachments.push({
           ...base,
           content: formatTextAttachment(file.path, content),
-        });
+        })
       } else {
         this.pendingAttachments.push({
           ...base,
           content: `[Attached file: ${file.name}]`,
-        });
+        })
       }
-      this.updateSendButton();
+      this.updateSendButton()
     } catch (e) {
-      new Notice(`Failed to attach ${file.name}: ${e}`);
+      new Notice(`Failed to attach ${file.name}: ${e}`)
     }
   }
 
   /** Replace the `@query` with inline mention text, caret left after it. */
   private insertMentionText(
     mention: { query: string; start: number },
-    token: string,
+    token: string
   ): void {
     const { value, caret } = replaceMention(
       this.inputEl.value,
       mention.start,
       mention.query.length,
-      `${token} `,
-    );
-    this.inputEl.value = value;
-    this.inputEl.setSelectionRange(caret, caret);
-    this.autoResize();
-    this.updateSendButton();
+      `${token} `
+    )
+    this.inputEl.value = value
+    this.inputEl.setSelectionRange(caret, caret)
+    this.autoResize()
+    this.updateSendButton()
   }
 
   /** Drop any inline @-mention attachment whose token is no longer in the textarea. */
   private reconcileInlineMentions(): void {
     const survivors = reconcileMentions(
       this.inputEl.value,
-      this.pendingAttachments,
-    );
+      this.pendingAttachments
+    )
     if (survivors.length !== this.pendingAttachments.length) {
-      this.pendingAttachments = survivors;
-      this.updateSendButton();
+      this.pendingAttachments = survivors
+      this.updateSendButton()
     }
   }
 
   async handleFileSelect(): Promise<void> {
-    const files = this.fileInputEl.files;
-    if (!files || files.length === 0) return;
+    const files = this.fileInputEl.files
+    if (!files || files.length === 0) return
 
     for (const file of Array.from(files)) {
       try {
-        const kind = classifyFile({ name: file.name, mimeType: file.type });
+        const kind = classifyFile({ name: file.name, mimeType: file.type })
 
-        if (kind === "image") {
-          const resized = await this.resizeImage(file, 2048, 0.85);
+        if (kind === 'image') {
+          const resized = await this.resizeImage(file, 2048, 0.85)
           this.pendingAttachments.push({
             name: file.name,
             content: `[Attached image: ${file.name}]`,
             base64: resized.base64,
             mimeType: resized.mimeType,
-          });
-        } else if (kind === "text") {
-          const content = await file.text();
+          })
+        } else if (kind === 'text') {
+          const content = await file.text()
           this.pendingAttachments.push({
             name: file.name,
             content: formatTextAttachment(file.name, content),
-          });
+          })
         } else {
           this.pendingAttachments.push({
             name: file.name,
-            content: `[Attached file: ${file.name} (${file.type || "unknown type"}, ${Math.round(file.size / 1024)}KB)]`,
-          });
+            content: `[Attached file: ${file.name} (${file.type || 'unknown type'}, ${Math.round(file.size / 1024)}KB)]`,
+          })
         }
       } catch (e) {
-        new Notice(`Failed to attach ${file.name}: ${e}`);
+        new Notice(`Failed to attach ${file.name}: ${e}`)
       }
     }
 
     // Update preview
-    this.renderAttachPreview();
-    this.fileInputEl.value = "";
+    this.renderAttachPreview()
+    this.fileInputEl.value = ''
   }
 
   async handlePastedFile(file: File): Promise<void> {
     try {
-      const ext = file.type.split("/")[1] || "png";
-      const resized = await this.resizeImage(file, 2048, 0.85);
+      const ext = file.type.split('/')[1] || 'png'
+      const resized = await this.resizeImage(file, 2048, 0.85)
       this.pendingAttachments.push({
         name: `clipboard.${ext}`,
         content: `[Attached image: clipboard.${ext}]`,
         base64: resized.base64,
         mimeType: resized.mimeType,
-      });
-      this.renderAttachPreview();
+      })
+      this.renderAttachPreview()
     } catch (e) {
-      new Notice(`Failed to paste image: ${e}`);
+      new Notice(`Failed to paste image: ${e}`)
     }
   }
 
   private async resizeImage(
     file: File,
     maxSide: number,
-    quality: number,
+    quality: number
   ): Promise<{ base64: string; mimeType: string }> {
     return new Promise((resolve, reject) => {
-      const img = new Image();
-      const url = URL.createObjectURL(file);
+      const img = new Image()
+      const url = URL.createObjectURL(file)
       img.onload = () => {
-        URL.revokeObjectURL(url);
-        let { width, height } = img;
+        URL.revokeObjectURL(url)
+        let { width, height } = img
         if (width > maxSide || height > maxSide) {
-          const scale = maxSide / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
+          const scale = maxSide / Math.max(width, height)
+          width = Math.round(width * scale)
+          height = Math.round(height * scale)
         }
-        const canvas = createEl("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
+        const canvas = createEl('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
         if (!ctx) {
-          reject(new Error("No canvas context"));
-          return;
+          reject(new Error('No canvas context'))
+          return
         }
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        const base64 = dataUrl.split(",")[1];
-        resolve({ base64, mimeType: "image/jpeg" });
-      };
+        ctx.drawImage(img, 0, 0, width, height)
+        const dataUrl = canvas.toDataURL('image/jpeg', quality)
+        const base64 = dataUrl.split(',')[1]
+        resolve({ base64, mimeType: 'image/jpeg' })
+      }
       img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Failed to load image"));
-      };
-      img.src = url;
-    });
+        URL.revokeObjectURL(url)
+        reject(new Error('Failed to load image'))
+      }
+      img.src = url
+    })
   }
 
   private renderAttachPreview(): void {
-    this.attachPreviewEl.empty();
+    this.attachPreviewEl.empty()
     // Inline @-mentions live in the textarea, not the chip strip.
-    const chipped = this.pendingAttachments.filter((a) => !a.inline);
+    const chipped = this.pendingAttachments.filter((a) => !a.inline)
     if (chipped.length === 0) {
-      this.attachPreviewEl.addClass("oc-hidden");
-      return;
+      this.attachPreviewEl.addClass('oc-hidden')
+      return
     }
-    this.attachPreviewEl.removeClass("oc-hidden");
+    this.attachPreviewEl.removeClass('oc-hidden')
 
     for (let i = 0; i < chipped.length; i++) {
-      const att = chipped[i];
-      const chip = this.attachPreviewEl.createDiv("openclaw-attach-chip");
+      const att = chipped[i]
+      const chip = this.attachPreviewEl.createDiv('openclaw-attach-chip')
 
       // Show thumbnail for images
       if (att.base64 && att.mimeType) {
-        const src = `data:${att.mimeType};base64,${att.base64}`;
-        chip.createEl("img", { cls: "openclaw-attach-thumb", attr: { src } });
+        const src = `data:${att.mimeType};base64,${att.base64}`
+        chip.createEl('img', { cls: 'openclaw-attach-thumb', attr: { src } })
       } else if (att.vaultPath) {
         try {
-          const src = this.app.vault.adapter.getResourcePath(att.vaultPath);
+          const src = this.app.vault.adapter.getResourcePath(att.vaultPath)
           if (src)
-            chip.createEl("img", {
-              cls: "openclaw-attach-thumb",
+            chip.createEl('img', {
+              cls: 'openclaw-attach-thumb',
               attr: { src },
-            });
+            })
         } catch {
           /* ignore */
         }
       }
 
-      chip.createSpan({ text: att.name, cls: "openclaw-attach-name" });
-      const removeBtn = chip.createEl("button", {
-        text: "✕",
-        cls: "openclaw-attach-remove",
-      });
-      removeBtn.addEventListener("click", () => {
+      chip.createSpan({ text: att.name, cls: 'openclaw-attach-name' })
+      const removeBtn = chip.createEl('button', {
+        text: '✕',
+        cls: 'openclaw-attach-remove',
+      })
+      removeBtn.addEventListener('click', () => {
         // Splice the actual object — `chipped` is a filtered view, so its index
         // doesn't line up with the backing array.
-        const at = this.pendingAttachments.indexOf(att);
-        if (at >= 0) this.pendingAttachments.splice(at, 1);
-        this.renderAttachPreview();
-      });
+        const at = this.pendingAttachments.indexOf(att)
+        if (at >= 0) this.pendingAttachments.splice(at, 1)
+        this.renderAttachPreview()
+      })
     }
   }
 
   private buildToolLabel(
     toolName: string,
-    args: Record<string, unknown> | undefined,
+    args: Record<string, unknown> | undefined
   ): { label: string; url?: string } {
-    const a = args ?? {};
+    const a = args ?? {}
     switch (toolName) {
-      case "exec": {
-        const cmd = str(a?.command);
-        const short = cmd.length > 60 ? cmd.slice(0, 60) + "…" : cmd;
-        return { label: `🔧 ${short || "Running command"}` };
+      case 'exec': {
+        const cmd = str(a?.command)
+        const short = cmd.length > 60 ? cmd.slice(0, 60) + '…' : cmd
+        return { label: `🔧 ${short || 'Running command'}` }
       }
-      case "read":
-      case "Read": {
-        const p = str(a?.path, str(a?.file_path));
-        const name = p.split("/").pop() || "file";
-        return { label: `📄 Reading ${name}` };
+      case 'read':
+      case 'Read': {
+        const p = str(a?.path, str(a?.file_path))
+        const name = p.split('/').pop() || 'file'
+        return { label: `📄 Reading ${name}` }
       }
-      case "write":
-      case "Write": {
-        const p = str(a?.path, str(a?.file_path));
-        const name = p.split("/").pop() || "file";
-        return { label: `✏️ Writing ${name}` };
+      case 'write':
+      case 'Write': {
+        const p = str(a?.path, str(a?.file_path))
+        const name = p.split('/').pop() || 'file'
+        return { label: `✏️ Writing ${name}` }
       }
-      case "edit":
-      case "Edit": {
-        const p = str(a?.path, str(a?.file_path));
-        const name = p.split("/").pop() || "file";
-        return { label: `✏️ Editing ${name}` };
+      case 'edit':
+      case 'Edit': {
+        const p = str(a?.path, str(a?.file_path))
+        const name = p.split('/').pop() || 'file'
+        return { label: `✏️ Editing ${name}` }
       }
-      case "web_search": {
-        const q = str(a?.query);
+      case 'web_search': {
+        const q = str(a?.query)
         return {
-          label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"`,
-        };
-      }
-      case "web_fetch": {
-        const rawUrl = str(a?.url);
-        try {
-          const domain = new URL(rawUrl).hostname;
-          return { label: `🌐 Fetching ${domain}`, url: rawUrl };
-        } catch {
-          return { label: `🌐 Fetching page`, url: rawUrl || undefined };
+          label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + '…' : q}"`,
         }
       }
-      case "browser":
-        return { label: "🌐 Using browser" };
-      case "image":
-        return { label: "👁️ Viewing image" };
-      case "memory_search": {
-        const q = str(a?.query);
+      case 'web_fetch': {
+        const rawUrl = str(a?.url)
+        try {
+          const domain = new URL(rawUrl).hostname
+          return { label: `🌐 Fetching ${domain}`, url: rawUrl }
+        } catch {
+          return { label: `🌐 Fetching page`, url: rawUrl || undefined }
+        }
+      }
+      case 'browser':
+        return { label: '🌐 Using browser' }
+      case 'image':
+        return { label: '👁️ Viewing image' }
+      case 'memory_search': {
+        const q = str(a?.query)
         return {
-          label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + "…" : q}"`,
-        };
+          label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + '…' : q}"`,
+        }
       }
-      case "memory_get": {
-        const p = str(a?.path);
-        const name = p.split("/").pop() || "memory";
-        return { label: `🧠 Reading ${name}` };
+      case 'memory_get': {
+        const p = str(a?.path)
+        const name = p.split('/').pop() || 'memory'
+        return { label: `🧠 Reading ${name}` }
       }
-      case "message":
-        return { label: "💬 Sending message" };
-      case "tts":
-        return { label: "🔊 Speaking" };
-      case "sessions_spawn":
-        return { label: "🤖 Spawning sub-agent" };
+      case 'message':
+        return { label: '💬 Sending message' }
+      case 'tts':
+        return { label: '🔊 Speaking' }
+      case 'sessions_spawn':
+        return { label: '🤖 Spawning sub-agent' }
       default:
-        return { label: toolName ? `⚡ ${toolName}` : "Working" };
+        return { label: toolName ? `⚡ ${toolName}` : 'Working' }
     }
   }
 
   private appendToolCall(label: string, url?: string, active = false): void {
     const el = createDiv({
-      cls: "openclaw-tool-item" + (active ? " openclaw-tool-active" : ""),
-    });
+      cls: 'openclaw-tool-item' + (active ? ' openclaw-tool-active' : ''),
+    })
     if (url) {
-      const link = el.createEl("a", {
+      const link = el.createEl('a', {
         text: label,
         href: url,
-        cls: "openclaw-tool-link",
-      });
-      link.addEventListener("click", (e) => {
-        e.preventDefault();
-        window.open(url, "_blank");
-      });
+        cls: 'openclaw-tool-link',
+      })
+      link.addEventListener('click', (e) => {
+        e.preventDefault()
+        window.open(url, '_blank')
+      })
     } else {
-      el.createSpan({ text: label });
+      el.createSpan({ text: label })
     }
     if (active) {
-      const dots = el.createSpan({ cls: "openclaw-tool-dots" });
-      dots.createSpan("openclaw-dot");
-      dots.createSpan("openclaw-dot");
-      dots.createSpan("openclaw-dot");
+      const dots = el.createSpan({ cls: 'openclaw-tool-dots' })
+      dots.createSpan('openclaw-dot')
+      dots.createSpan('openclaw-dot')
+      dots.createSpan('openclaw-dot')
     }
-    this.messagesEl.appendChild(el);
-    this.scrollToBottom();
+    this.messagesEl.appendChild(el)
+    this.scrollToBottom()
   }
 
   private deactivateLastToolItem(): void {
-    const items = this.messagesEl.querySelectorAll(".openclaw-tool-active");
-    const last = items[items.length - 1];
+    const items = this.messagesEl.querySelectorAll('.openclaw-tool-active')
+    const last = items[items.length - 1]
     if (last) {
-      last.removeClass("openclaw-tool-active");
-      const dots = last.querySelector(".openclaw-tool-dots");
-      if (dots) dots.remove();
+      last.removeClass('openclaw-tool-active')
+      const dots = last.querySelector('.openclaw-tool-dots')
+      if (dots) dots.remove()
     }
   }
 
@@ -4430,142 +4315,142 @@ class OpenClawChatView extends ItemView {
   }
 
   private showBanner(text: string): void {
-    if (!this.bannerEl) return;
-    this.bannerEl.textContent = text;
-    this.bannerEl.removeClass("oc-hidden");
+    if (!this.bannerEl) return
+    this.bannerEl.textContent = text
+    this.bannerEl.removeClass('oc-hidden')
   }
 
   private hideBanner(): void {
-    if (!this.bannerEl) return;
-    this.bannerEl.addClass("oc-hidden");
+    if (!this.bannerEl) return
+    this.bannerEl.addClass('oc-hidden')
   }
 
   /** Resolve which session a stream/agent event belongs to */
   private resolveStreamSession(payload: GatewayPayload): string | null {
     // Try sessionKey on payload first
-    const sk = str(payload.sessionKey);
+    const sk = str(payload.sessionKey)
     if (sk) {
       // Normalize: strip agent:main: prefix
-      const prefix = this.agentPrefix;
-      const normalized = sk.startsWith(prefix) ? sk.slice(prefix.length) : sk;
-      if (this.streams.has(normalized)) return normalized;
+      const prefix = this.agentPrefix
+      const normalized = sk.startsWith(prefix) ? sk.slice(prefix.length) : sk
+      if (this.streams.has(normalized)) return normalized
     }
     // Fall back to runId mapping
-    const data = payload.data as GatewayPayload | undefined;
-    const runId = str(payload.runId, str(data?.runId));
+    const data = payload.data as GatewayPayload | undefined
+    const runId = str(payload.runId, str(data?.runId))
     if (runId && this.runToSession.has(runId))
-      return this.runToSession.get(runId)!;
+      return this.runToSession.get(runId)!
     // Last resort: if only one stream is active, use that
     if (this.streams.size === 1) {
-      const next = this.streams.keys().next();
-      return next.done ? null : next.value;
+      const next = this.streams.keys().next()
+      return next.done ? null : next.value
     }
-    return null;
+    return null
   }
 
   handleStreamEvent(payload: GatewayPayload): void {
-    const stream = str(payload.stream);
-    const state = str(payload.state);
-    const payloadData = payload.data as GatewayPayload | undefined;
+    const stream = str(payload.stream)
+    const state = str(payload.state)
+    const payloadData = payload.data as GatewayPayload | undefined
 
-    const sessionKey = this.resolveStreamSession(payload);
-    const isActiveTab = sessionKey === this.activeSessionKey;
+    const sessionKey = this.resolveStreamSession(payload)
+    const isActiveTab = sessionKey === this.activeSessionKey
 
     // Compaction can arrive without an active stream
     if (!sessionKey || !this.streams.has(sessionKey)) {
-      if (stream === "compaction" || state === "compacting") {
-        const cPhase = str(payloadData?.phase);
+      if (stream === 'compaction' || state === 'compacting') {
+        const cPhase = str(payloadData?.phase)
         if (isActiveTab || !sessionKey) {
-          if (cPhase === "end") {
-            window.setTimeout(() => this.hideBanner(), 2000);
+          if (cPhase === 'end') {
+            window.setTimeout(() => this.hideBanner(), 2000)
           } else {
-            this.showBanner("Compacting context...");
+            this.showBanner('Compacting context...')
           }
         }
       }
-      return;
+      return
     }
 
-    const ss = this.streams.get(sessionKey)!;
-    const typingText = this.typingEl.querySelector(".openclaw-typing-text");
+    const ss = this.streams.get(sessionKey)!
+    const typingText = this.typingEl.querySelector('.openclaw-typing-text')
 
     // Agent "assistant" events = agent is actively working
-    if (state === "assistant") {
-      const timeSinceDelta = Date.now() - ss.lastDeltaTime;
+    if (state === 'assistant') {
+      const timeSinceDelta = Date.now() - ss.lastDeltaTime
       if (ss.text && timeSinceDelta > 1500) {
         if (!ss.workingTimer) {
           ss.workingTimer = window.setTimeout(() => {
             if (this.streams.has(sessionKey)) {
-              if (isActiveTab && this.typingEl.hasClass("oc-hidden")) {
-                if (typingText) typingText.textContent = "Working";
-                this.typingEl.removeClass("oc-hidden");
+              if (isActiveTab && this.typingEl.hasClass('oc-hidden')) {
+                if (typingText) typingText.textContent = 'Working'
+                this.typingEl.removeClass('oc-hidden')
               }
             }
-            ss.workingTimer = null;
-          }, 500);
+            ss.workingTimer = null
+          }, 500)
         }
       } else if (!ss.text && !ss.lastDeltaTime && isActiveTab) {
-        this.typingEl.removeClass("oc-hidden");
+        this.typingEl.removeClass('oc-hidden')
       }
-    } else if (state === "lifecycle") {
+    } else if (state === 'lifecycle') {
       if (!ss.text && isActiveTab && typingText) {
-        typingText.textContent = "Thinking";
-        this.typingEl.removeClass("oc-hidden");
+        typingText.textContent = 'Thinking'
+        this.typingEl.removeClass('oc-hidden')
       }
     }
 
     // Handle explicit tool events
     const toolName = str(
       payloadData?.name,
-      str(payloadData?.toolName, str(payload.toolName, str(payload.name))),
-    );
-    const phase = str(payloadData?.phase, str(payload.phase));
+      str(payloadData?.toolName, str(payload.toolName, str(payload.name)))
+    )
+    const phase = str(payloadData?.phase, str(payload.phase))
 
     if (
-      (stream === "tool" || toolName) &&
-      (phase === "start" || state === "tool_use")
+      (stream === 'tool' || toolName) &&
+      (phase === 'start' || state === 'tool_use')
     ) {
       if (ss.compactTimer) {
-        window.clearTimeout(ss.compactTimer);
-        ss.compactTimer = null;
+        window.clearTimeout(ss.compactTimer)
+        ss.compactTimer = null
       }
       if (ss.workingTimer) {
-        window.clearTimeout(ss.workingTimer);
-        ss.workingTimer = null;
+        window.clearTimeout(ss.workingTimer)
+        ss.workingTimer = null
       }
       if (ss.text) {
-        ss.splitPoints.push(ss.text.length);
+        ss.splitPoints.push(ss.text.length)
       }
       const { label, url } = this.buildToolLabel(
         toolName,
         (payloadData?.args || payload.args) as
           | Record<string, unknown>
-          | undefined,
-      );
-      ss.toolCalls.push(label);
-      ss.items.push({ type: "tool", label, url } as StreamItem);
+          | undefined
+      )
+      ss.toolCalls.push(label)
+      ss.items.push({ type: 'tool', label, url } as StreamItem)
       if (isActiveTab) {
-        this.appendToolCall(label, url, true);
-        if (typingText) typingText.textContent = label;
-        this.typingEl.removeClass("oc-hidden");
+        this.appendToolCall(label, url, true)
+        if (typingText) typingText.textContent = label
+        this.typingEl.removeClass('oc-hidden')
       }
-    } else if ((stream === "tool" || toolName) && phase === "result") {
+    } else if ((stream === 'tool' || toolName) && phase === 'result') {
       if (isActiveTab) {
-        this.deactivateLastToolItem();
-        if (typingText) typingText.textContent = "Thinking";
-        this.typingEl.removeClass("oc-hidden");
-        this.scrollToBottom();
+        this.deactivateLastToolItem()
+        if (typingText) typingText.textContent = 'Thinking'
+        this.typingEl.removeClass('oc-hidden')
+        this.scrollToBottom()
       }
-    } else if (stream === "compaction" || state === "compacting") {
-      if (phase === "end") {
-        if (isActiveTab) window.setTimeout(() => this.hideBanner(), 2000);
+    } else if (stream === 'compaction' || state === 'compacting') {
+      if (phase === 'end') {
+        if (isActiveTab) window.setTimeout(() => this.hideBanner(), 2000)
       } else {
-        ss.toolCalls.push("Compacting memory");
-        ss.items.push({ type: "tool", label: "Compacting memory" });
+        ss.toolCalls.push('Compacting memory')
+        ss.items.push({ type: 'tool', label: 'Compacting memory' })
         if (isActiveTab) {
-          this.appendToolCall("Compacting memory");
-          this.typingEl.addClass("oc-hidden");
-          this.showBanner("Compacting context...");
+          this.appendToolCall('Compacting memory')
+          this.typingEl.addClass('oc-hidden')
+          this.showBanner('Compacting context...')
         }
       }
     }
@@ -4573,9 +4458,9 @@ class OpenClawChatView extends ItemView {
 
   handleChatEvent(payload: GatewayPayload): void {
     // Resolve which session this event belongs to
-    const payloadSk = str(payload.sessionKey);
-    const prefix = this.agentPrefix;
-    let eventSessionKey: string | null = null;
+    const payloadSk = str(payload.sessionKey)
+    const prefix = this.agentPrefix
+    let eventSessionKey: string | null = null
     // Try to match against known sessions
     for (const sk of [...this.streams.keys(), this.activeSessionKey]) {
       if (
@@ -4583,207 +4468,207 @@ class OpenClawChatView extends ItemView {
         payloadSk === `${prefix}${sk}` ||
         payloadSk.endsWith(`:${sk}`)
       ) {
-        eventSessionKey = sk;
-        break;
+        eventSessionKey = sk
+        break
       }
     }
     // If no stream match, check if it's for the active tab (passive device case)
     if (!eventSessionKey) {
-      const active = this.activeSessionKey;
+      const active = this.activeSessionKey
       if (
         payloadSk === active ||
         payloadSk === `${prefix}${active}` ||
         payloadSk.endsWith(`:${active}`)
       ) {
-        eventSessionKey = active;
+        eventSessionKey = active
       } else {
-        return; // Not for any known session
+        return // Not for any known session
       }
     }
 
-    const ss = this.streams.get(eventSessionKey);
-    const isActiveTab = eventSessionKey === this.activeSessionKey;
-    const chatState = str(payload.state);
+    const ss = this.streams.get(eventSessionKey)
+    const isActiveTab = eventSessionKey === this.activeSessionKey
+    const chatState = str(payload.state)
 
     // No active stream for this session (passive device): still refresh history
     if (
       !ss &&
-      (chatState === "final" ||
-        chatState === "aborted" ||
-        chatState === "error")
+      (chatState === 'final' ||
+        chatState === 'aborted' ||
+        chatState === 'error')
     ) {
       if (isActiveTab) {
-        this.hideBanner();
-        void this.loadHistory();
+        this.hideBanner()
+        void this.loadHistory()
       }
-      return;
+      return
     }
 
-    if (chatState === "delta" && ss) {
+    if (chatState === 'delta' && ss) {
       if (ss.compactTimer) {
-        window.clearTimeout(ss.compactTimer);
-        ss.compactTimer = null;
+        window.clearTimeout(ss.compactTimer)
+        ss.compactTimer = null
       }
       if (ss.workingTimer) {
-        window.clearTimeout(ss.workingTimer);
-        ss.workingTimer = null;
+        window.clearTimeout(ss.workingTimer)
+        ss.workingTimer = null
       }
-      ss.lastDeltaTime = Date.now();
+      ss.lastDeltaTime = Date.now()
       const text = this.extractDeltaText(
-        payload.message as Record<string, unknown> | string | undefined,
-      );
+        payload.message as Record<string, unknown> | string | undefined
+      )
       if (text) {
-        ss.text = text;
+        ss.text = text
         if (isActiveTab) {
-          this.typingEl.addClass("oc-hidden");
-          this.hideBanner();
-          this.updateStreamBubble();
+          this.typingEl.addClass('oc-hidden')
+          this.hideBanner()
+          this.updateStreamBubble()
         }
       }
-    } else if (chatState === "final") {
-      const items = ss ? [...ss.items] : [];
-      this.finishStream(eventSessionKey);
+    } else if (chatState === 'final') {
+      const items = ss ? [...ss.items] : []
+      this.finishStream(eventSessionKey)
 
       if (isActiveTab) {
         void this.loadHistory().then(async () => {
-          await this.renderMessages();
-          void this.updateContextMeter();
+          await this.renderMessages()
+          void this.updateContextMeter()
           if (items.length > 0) {
             const lastAssistant = [...this.messages]
               .reverse()
-              .find((m) => m.role === "assistant");
+              .find((m) => m.role === 'assistant')
             if (lastAssistant) {
-              const key = String(lastAssistant.timestamp);
+              const key = String(lastAssistant.timestamp)
               if (!this.plugin.settings.streamItemsMap)
-                this.plugin.settings.streamItemsMap = {};
-              this.plugin.settings.streamItemsMap[key] = items;
-              void this.plugin.saveSettings();
+                this.plugin.settings.streamItemsMap = {}
+              this.plugin.settings.streamItemsMap[key] = items
+              void this.plugin.saveSettings()
             }
           }
-        });
+        })
       } else {
         // Not active tab: just clean up, history will load when user switches to it
       }
-    } else if (chatState === "aborted") {
+    } else if (chatState === 'aborted') {
       if (isActiveTab && ss?.text) {
         this.messages.push({
-          role: "assistant",
+          role: 'assistant',
           text: ss.text,
           images: [],
           timestamp: Date.now(),
-        });
+        })
       }
-      this.finishStream(eventSessionKey);
-      if (isActiveTab) void this.renderMessages();
-    } else if (chatState === "error") {
+      this.finishStream(eventSessionKey)
+      if (isActiveTab) void this.renderMessages()
+    } else if (chatState === 'error') {
       if (isActiveTab) {
         this.messages.push({
-          role: "assistant",
-          text: `Error: ${str(payload.errorMessage, "unknown error")}`,
+          role: 'assistant',
+          text: `Error: ${str(payload.errorMessage, 'unknown error')}`,
           images: [],
           timestamp: Date.now(),
-        });
+        })
       }
-      this.finishStream(eventSessionKey);
-      if (isActiveTab) void this.renderMessages();
+      this.finishStream(eventSessionKey)
+      if (isActiveTab) void this.renderMessages()
     }
   }
 
   private finishStream(sessionKey?: string): void {
-    const sk = sessionKey ?? this.activeSessionKey;
-    const ss = this.streams.get(sk);
+    const sk = sessionKey ?? this.activeSessionKey
+    const ss = this.streams.get(sk)
     if (ss) {
-      if (ss.compactTimer) window.clearTimeout(ss.compactTimer);
-      if (ss.workingTimer) window.clearTimeout(ss.workingTimer);
-      this.runToSession.delete(ss.runId);
-      this.streams.delete(sk);
+      if (ss.compactTimer) window.clearTimeout(ss.compactTimer)
+      if (ss.workingTimer) window.clearTimeout(ss.workingTimer)
+      this.runToSession.delete(ss.runId)
+      this.streams.delete(sk)
     }
     // Only clear DOM if this is the active tab
     if (sk === this.activeSessionKey) {
-      this.hideBanner();
-      this.streamEl = null;
-      this.abortBtn.addClass("oc-hidden");
-      this.typingEl.addClass("oc-hidden");
-      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
-      if (typingText) typingText.textContent = "Thinking";
+      this.hideBanner()
+      this.streamEl = null
+      this.abortBtn.addClass('oc-hidden')
+      this.typingEl.addClass('oc-hidden')
+      const typingText = this.typingEl.querySelector('.openclaw-typing-text')
+      if (typingText) typingText.textContent = 'Thinking'
     }
   }
 
   /** Restore stream UI (typing, tool calls, stream bubble) for the active tab after a tab switch */
   private restoreStreamUI(): void {
-    const ss = this.activeStream;
-    if (!ss) return;
+    const ss = this.activeStream
+    if (!ss) return
 
     // Show abort button
-    this.abortBtn.removeClass("oc-hidden");
+    this.abortBtn.removeClass('oc-hidden')
 
     // Restore tool call items in the DOM
     for (const item of ss.items) {
-      if (item.type === "tool") {
-        this.appendToolCall(item.label, item.url);
+      if (item.type === 'tool') {
+        this.appendToolCall(item.label, item.url)
       }
     }
 
     // Restore stream text bubble if we have delta text
     if (ss.text) {
-      this.updateStreamBubble();
+      this.updateStreamBubble()
       // If text is streaming, show working indicator (text exists but might still be coming)
-      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
-      if (typingText) typingText.textContent = "Working";
-      this.typingEl.removeClass("oc-hidden");
+      const typingText = this.typingEl.querySelector('.openclaw-typing-text')
+      if (typingText) typingText.textContent = 'Working'
+      this.typingEl.removeClass('oc-hidden')
     } else {
       // No text yet, show thinking
-      const typingText = this.typingEl.querySelector(".openclaw-typing-text");
-      if (typingText) typingText.textContent = "Thinking";
-      this.typingEl.removeClass("oc-hidden");
+      const typingText = this.typingEl.querySelector('.openclaw-typing-text')
+      if (typingText) typingText.textContent = 'Thinking'
+      this.typingEl.removeClass('oc-hidden')
     }
 
-    this.scrollToBottom();
+    this.scrollToBottom()
   }
 
   private insertStreamItemsBeforeLastAssistant(items: StreamItem[]): void {
-    if (items.length === 0) return;
-    const bubbles = this.messagesEl.querySelectorAll(".openclaw-msg-assistant");
-    const lastBubble = bubbles[bubbles.length - 1];
-    if (!lastBubble) return;
+    if (items.length === 0) return
+    const bubbles = this.messagesEl.querySelectorAll('.openclaw-msg-assistant')
+    const lastBubble = bubbles[bubbles.length - 1]
+    if (!lastBubble) return
 
     for (const item of items) {
-      const el = this.createStreamItemEl(item);
-      lastBubble.parentElement?.insertBefore(el, lastBubble);
+      const el = this.createStreamItemEl(item)
+      lastBubble.parentElement?.insertBefore(el, lastBubble)
     }
-    this.scrollToBottom();
+    this.scrollToBottom()
   }
 
   private createStreamItemEl(item: StreamItem): HTMLElement {
-    if (item.type === "tool") {
-      const el = createDiv({ cls: "openclaw-tool-item" });
+    if (item.type === 'tool') {
+      const el = createDiv({ cls: 'openclaw-tool-item' })
       if (item.url) {
-        const link = el.createEl("a", {
+        const link = el.createEl('a', {
           text: item.label,
           href: item.url,
-          cls: "openclaw-tool-link",
-        });
-        link.addEventListener("click", (e) => {
-          e.preventDefault();
-          window.open(item.url, "_blank");
-        });
+          cls: 'openclaw-tool-link',
+        })
+        link.addEventListener('click', (e) => {
+          e.preventDefault()
+          window.open(item.url, '_blank')
+        })
       } else {
-        el.textContent = item.label;
+        el.textContent = item.label
       }
-      return el;
+      return el
     } else {
-      const details = createEl("details", { cls: "openclaw-intermediary" });
-      const summary = createEl("summary", {
-        cls: "openclaw-intermediary-summary",
-      });
+      const details = createEl('details', { cls: 'openclaw-intermediary' })
+      const summary = createEl('summary', {
+        cls: 'openclaw-intermediary-summary',
+      })
       const preview =
-        item.text.length > 60 ? item.text.slice(0, 60) + "..." : item.text;
-      summary.textContent = preview;
-      details.appendChild(summary);
-      const content = createDiv({ cls: "openclaw-intermediary-content" });
-      content.textContent = item.text;
-      details.appendChild(content);
-      return details;
+        item.text.length > 60 ? item.text.slice(0, 60) + '...' : item.text
+      summary.textContent = preview
+      details.appendChild(summary)
+      const content = createDiv({ cls: 'openclaw-intermediary-content' })
+      content.textContent = item.text
+      details.appendChild(content)
+      return details
     }
   }
 
@@ -4791,275 +4676,275 @@ class OpenClawChatView extends ItemView {
     text = text
       .replace(
         /Conversation info \(untrusted metadata\):\s*```json[\s\S]*?```\s*/g,
-        "",
+        ''
       )
-      .trim();
+      .trim()
     text = text
-      .replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, "")
-      .trim();
-    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, "").trim();
-    text = text.replace(/^\[media attached:.*?\]\s*/gm, "").trim();
-    text = text.replace(/^To send an image back.*$/gm, "").trim();
+      .replace(/^```json\s*\{\s*"message_id"[\s\S]*?```\s*/gm, '')
+      .trim()
+    text = text.replace(/^\[.*?GMT[+-]\d+\]\s*/gm, '').trim()
+    text = text.replace(/^\[media attached:.*?\]\s*/gm, '').trim()
+    text = text.replace(/^To send an image back.*$/gm, '').trim()
     // Strip TTS directives and MEDIA: paths (rendered as audio players separately)
-    text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, "").trim();
-    text = text.replace(/^MEDIA:\/[^\n]+$/gm, "").trim();
-    text = text.replace(/^VOICE:[^\s\n]+$/gm, "").trim();
+    text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, '').trim()
+    text = text.replace(/^MEDIA:\/[^\n]+$/gm, '').trim()
+    text = text.replace(/^VOICE:[^\s\n]+$/gm, '').trim()
     // Strip inbound voice data (shown as "🎤 Voice message" in UI)
-    text = text.replace(/^AUDIO_DATA:[^\n]+$/gm, "").trim();
-    if (text === "🎤 Voice message") text = "🎤 Voice message"; // keep the label
-    if (text === "NO_REPLY" || text === "HEARTBEAT_OK") return "";
-    return text;
+    text = text.replace(/^AUDIO_DATA:[^\n]+$/gm, '').trim()
+    if (text === '🎤 Voice message') text = '🎤 Voice message' // keep the label
+    if (text === 'NO_REPLY' || text === 'HEARTBEAT_OK') return ''
+    return text
   }
 
   /** Extract VOICE:path references from message text */
   private extractVoiceRefs(text: string): string[] {
-    const refs: string[] = [];
-    const re = /^VOICE:([^\s\n]+\.(?:mp3|opus|ogg|wav|m4a|mp4))$/gm;
-    let match: RegExpExecArray | null;
+    const refs: string[] = []
+    const re = /^VOICE:([^\s\n]+\.(?:mp3|opus|ogg|wav|m4a|mp4))$/gm
+    let match: RegExpExecArray | null
     while ((match = re.exec(text)) !== null) {
-      refs.push(match[1].trim());
+      refs.push(match[1].trim())
     }
-    return refs;
+    return refs
   }
 
   /** Build HTTP URL for a voice file served by the gateway */
   private buildVoiceUrl(voicePath: string): string {
     // Gateway URL is ws:// or wss:// — convert to http:// or https://
-    const gwUrl = this.plugin.settings.gatewayUrl || "";
-    const httpUrl = gwUrl.replace(/^ws(s?):\/\//, "http$1://");
-    return `${httpUrl}/${voicePath}`;
+    const gwUrl = this.plugin.settings.gatewayUrl || ''
+    const httpUrl = gwUrl.replace(/^ws(s?):\/\//, 'http$1://')
+    return `${httpUrl}/${voicePath}`
   }
 
   /** Render an inline audio player that fetches audio via gateway HTTP */
   private renderAudioPlayer(container: HTMLElement, voiceRef: string): void {
-    const playerEl = container.createDiv("openclaw-audio-player");
-    const playBtn = playerEl.createEl("button", {
-      cls: "openclaw-audio-play-btn",
-      text: "▶ voice message",
-    });
-    const progressEl = playerEl.createDiv("openclaw-audio-progress");
-    const barEl = progressEl.createDiv("openclaw-audio-bar");
+    const playerEl = container.createDiv('openclaw-audio-player')
+    const playBtn = playerEl.createEl('button', {
+      cls: 'openclaw-audio-play-btn',
+      text: '▶ voice message',
+    })
+    const progressEl = playerEl.createDiv('openclaw-audio-progress')
+    const barEl = progressEl.createDiv('openclaw-audio-bar')
 
-    let audio: HTMLAudioElement | null = null;
+    let audio: HTMLAudioElement | null = null
 
     playBtn.addEventListener(
-      "click",
+      'click',
       () =>
         void (async () => {
           if (audio && !audio.paused) {
-            audio.pause();
-            playBtn.textContent = "▶ voice message";
-            return;
+            audio.pause()
+            playBtn.textContent = '▶ voice message'
+            return
           }
 
           if (!audio) {
-            playBtn.textContent = "⏳ loading...";
+            playBtn.textContent = '⏳ loading...'
             try {
-              const url = this.buildVoiceUrl(voiceRef);
-              console.debug("[OcO] Loading audio from:", url);
-              audio = new Audio(url);
+              const url = this.buildVoiceUrl(voiceRef)
+              console.debug('[OcO] Loading audio from:', url)
+              audio = new Audio(url)
 
               await new Promise<void>((resolve, reject) => {
                 const timer = window.setTimeout(
-                  () => reject(new Error("timeout")),
-                  10000,
-                );
+                  () => reject(new Error('timeout')),
+                  10000
+                )
                 audio!.addEventListener(
-                  "canplaythrough",
+                  'canplaythrough',
                   () => {
-                    window.clearTimeout(timer);
-                    resolve();
+                    window.clearTimeout(timer)
+                    resolve()
                   },
-                  { once: true },
-                );
+                  { once: true }
+                )
                 audio!.addEventListener(
-                  "error",
+                  'error',
                   () => {
-                    window.clearTimeout(timer);
-                    reject(new Error("load error"));
+                    window.clearTimeout(timer)
+                    reject(new Error('load error'))
                   },
-                  { once: true },
-                );
-                audio!.load();
-              });
+                  { once: true }
+                )
+                audio!.load()
+              })
 
-              audio.addEventListener("timeupdate", () => {
+              audio.addEventListener('timeupdate', () => {
                 if (audio && audio.duration)
                   barEl.setCssStyles({
                     width: `${(audio.currentTime / audio.duration) * 100}%`,
-                  });
-              });
-              audio.addEventListener("ended", () => {
-                playBtn.textContent = "▶ voice message";
-                barEl.setCssStyles({ width: "0%" });
-              });
+                  })
+              })
+              audio.addEventListener('ended', () => {
+                playBtn.textContent = '▶ voice message'
+                barEl.setCssStyles({ width: '0%' })
+              })
             } catch (e) {
-              console.error("[OcO] Audio load failed:", e);
-              playBtn.textContent = "⚠ audio unavailable";
-              playBtn.disabled = true;
-              return;
+              console.error('[OcO] Audio load failed:', e)
+              playBtn.textContent = '⚠ audio unavailable'
+              playBtn.disabled = true
+              return
             }
           }
 
-          playBtn.textContent = "⏸ playing...";
+          playBtn.textContent = '⏸ playing...'
           audio.play().catch(() => {
-            playBtn.textContent = "⚠ audio unavailable";
-            playBtn.disabled = true;
-          });
-        })(),
-    );
+            playBtn.textContent = '⚠ audio unavailable'
+            playBtn.disabled = true
+          })
+        })()
+    )
   }
 
   private extractDeltaText(
-    msg: Record<string, unknown> | string | undefined,
+    msg: Record<string, unknown> | string | undefined
   ): string {
-    if (typeof msg === "string") return msg;
-    if (!msg) return "";
+    if (typeof msg === 'string') return msg
+    if (!msg) return ''
     // Gateway sends {role, content, timestamp} where content is [{type:"text", text:"..."}]
-    const content = msg.content ?? msg;
+    const content = msg.content ?? msg
     if (Array.isArray(content)) {
-      let text = "";
+      let text = ''
       for (const block of content) {
-        if (typeof block === "string") {
-          text += block;
-        } else if (block && typeof block === "object" && "text" in block) {
-          text += (text ? "\n" : "") + String((block as { text: string }).text);
+        if (typeof block === 'string') {
+          text += block
+        } else if (block && typeof block === 'object' && 'text' in block) {
+          text += (text ? '\n' : '') + String((block as { text: string }).text)
         }
       }
-      return text;
+      return text
     }
-    if (typeof content === "string") return content;
-    return str(msg.text);
+    if (typeof content === 'string') return content
+    return str(msg.text)
   }
 
   private updateStreamBubble(): void {
-    const ss = this.activeStream;
-    const visibleText = ss?.text;
-    if (!visibleText) return;
+    const ss = this.activeStream
+    const visibleText = ss?.text
+    if (!visibleText) return
     if (!this.streamEl) {
       this.streamEl = this.messagesEl.createDiv(
-        "openclaw-msg openclaw-msg-assistant openclaw-streaming",
-      );
-      this.scrollToBottom(); // Scroll once when bubble first appears
+        'openclaw-msg openclaw-msg-assistant openclaw-streaming'
+      )
+      this.scrollToBottom() // Scroll once when bubble first appears
     }
-    this.streamEl.empty();
-    this.streamEl.createDiv({ text: visibleText, cls: "openclaw-msg-text" });
+    this.streamEl.empty()
+    this.streamEl.createDiv({ text: visibleText, cls: 'openclaw-msg-text' })
     // Don't auto-scroll during text streaming — let user read from the top
   }
 
   async renderMessages(): Promise<void> {
-    this.messagesEl.empty();
+    this.messagesEl.empty()
     for (const msg of this.messages) {
-      if (msg.role === "assistant") {
+      if (msg.role === 'assistant') {
         const hasContentTools =
           msg.contentBlocks?.some(
-            (b: ContentBlock) => b.type === "tool_use" || b.type === "toolCall",
-          ) || false;
+            (b: ContentBlock) => b.type === 'tool_use' || b.type === 'toolCall'
+          ) || false
 
         if (hasContentTools && msg.contentBlocks) {
           // Render interleaved text + tool blocks directly
           for (const block of msg.contentBlocks) {
-            if (block.type === "text" && block.text?.trim()) {
-              const blockAudio = this.extractVoiceRefs(block.text);
-              const cleaned = this.cleanText(block.text);
+            if (block.type === 'text' && block.text?.trim()) {
+              const blockAudio = this.extractVoiceRefs(block.text)
+              const cleaned = this.cleanText(block.text)
               // Render text bubble if there's visible text
               if (cleaned) {
                 const bubble = this.messagesEl.createDiv(
-                  "openclaw-msg openclaw-msg-assistant",
-                );
+                  'openclaw-msg openclaw-msg-assistant'
+                )
                 try {
                   await MarkdownRenderer.render(
                     this.app,
                     cleaned,
                     bubble,
-                    "",
-                    this,
-                  );
+                    '',
+                    this
+                  )
                 } catch {
-                  bubble.createDiv({ text: cleaned, cls: "openclaw-msg-text" });
+                  bubble.createDiv({ text: cleaned, cls: 'openclaw-msg-text' })
                 }
                 // Audio players inside text bubble
                 for (const ap of blockAudio) {
-                  this.renderAudioPlayer(bubble, ap);
+                  this.renderAudioPlayer(bubble, ap)
                 }
               } else if (blockAudio.length > 0) {
                 // No visible text but has audio — create a bubble just for the player
                 const bubble = this.messagesEl.createDiv(
-                  "openclaw-msg openclaw-msg-assistant",
-                );
+                  'openclaw-msg openclaw-msg-assistant'
+                )
                 for (const ap of blockAudio) {
-                  this.renderAudioPlayer(bubble, ap);
+                  this.renderAudioPlayer(bubble, ap)
                 }
               }
-            } else if (block.type === "tool_use" || block.type === "toolCall") {
+            } else if (block.type === 'tool_use' || block.type === 'toolCall') {
               const { label, url } = this.buildToolLabel(
-                block.name || "",
-                block.input || block.arguments || {},
-              );
+                block.name || '',
+                block.input || block.arguments || {}
+              )
               const el = this.createStreamItemEl({
-                type: "tool",
+                type: 'tool',
                 label,
                 url,
-              } as StreamItem);
-              this.messagesEl.appendChild(el);
+              } as StreamItem)
+              this.messagesEl.appendChild(el)
             }
           }
-          continue;
+          continue
         }
       }
       const cls =
-        msg.role === "user" ? "openclaw-msg-user" : "openclaw-msg-assistant";
-      const bubble = this.messagesEl.createDiv(`openclaw-msg ${cls}`);
+        msg.role === 'user' ? 'openclaw-msg-user' : 'openclaw-msg-assistant'
+      const bubble = this.messagesEl.createDiv(`openclaw-msg ${cls}`)
       // Render images
       if (msg.images && msg.images.length > 0) {
-        const imgContainer = bubble.createDiv("openclaw-msg-images");
+        const imgContainer = bubble.createDiv('openclaw-msg-images')
         for (const src of msg.images) {
-          const img = imgContainer.createEl("img", {
-            cls: "openclaw-msg-img",
-            attr: { src, loading: "lazy" },
-          });
-          img.addEventListener("click", () => {
+          const img = imgContainer.createEl('img', {
+            cls: 'openclaw-msg-img',
+            attr: { src, loading: 'lazy' },
+          })
+          img.addEventListener('click', () => {
             // Open full-size in a modal-like overlay
             const overlay = activeDocument.body.createDiv(
-              "openclaw-img-overlay",
-            );
-            overlay.createEl("img", { attr: { src } });
-            overlay.addEventListener("click", () => overlay.remove());
-          });
+              'openclaw-img-overlay'
+            )
+            overlay.createEl('img', { attr: { src } })
+            overlay.addEventListener('click', () => overlay.remove())
+          })
         }
       }
       // Combine audio paths from message metadata + text content
-      const allAudio = msg.text ? this.extractVoiceRefs(msg.text) : [];
+      const allAudio = msg.text ? this.extractVoiceRefs(msg.text) : []
 
       // Render text
       if (msg.text) {
         const displayText =
-          msg.role === "assistant" ? this.cleanText(msg.text) : msg.text;
+          msg.role === 'assistant' ? this.cleanText(msg.text) : msg.text
         if (displayText) {
-          if (msg.role === "assistant") {
+          if (msg.role === 'assistant') {
             try {
               await MarkdownRenderer.render(
                 this.app,
                 displayText,
                 bubble,
-                "",
-                this,
-              );
+                '',
+                this
+              )
             } catch {
-              bubble.createDiv({ text: displayText, cls: "openclaw-msg-text" });
+              bubble.createDiv({ text: displayText, cls: 'openclaw-msg-text' })
             }
           } else {
-            this.renderUserText(bubble, displayText);
+            this.renderUserText(bubble, displayText)
           }
         }
       }
 
       // Render audio players for voice messages
       for (const ap of allAudio) {
-        this.renderAudioPlayer(bubble, ap);
+        this.renderAudioPlayer(bubble, ap)
       }
     }
-    this.scrollToBottom();
+    this.scrollToBottom()
   }
 
   /**
@@ -5069,19 +4954,19 @@ class OpenClawChatView extends ItemView {
    */
   private renderUserText(bubble: HTMLElement, text: string): void {
     for (const seg of splitFileBlocks(text)) {
-      if (seg.type === "text") {
-        bubble.createDiv({ text: seg.text, cls: "openclaw-msg-text" });
+      if (seg.type === 'text') {
+        bubble.createDiv({ text: seg.text, cls: 'openclaw-msg-text' })
       } else {
-        const details = bubble.createEl("details", {
-          cls: "openclaw-file-attachment",
-        });
-        details.createEl("summary", {
-          cls: "openclaw-file-summary",
+        const details = bubble.createEl('details', {
+          cls: 'openclaw-file-attachment',
+        })
+        details.createEl('summary', {
+          cls: 'openclaw-file-summary',
           text: seg.label,
-        });
+        })
         details
-          .createEl("pre", { cls: "openclaw-file-body" })
-          .createEl("code", { text: seg.body });
+          .createEl('pre', { cls: 'openclaw-file-body' })
+          .createEl('code', { text: seg.body })
       }
     }
   }
@@ -5090,143 +4975,143 @@ class OpenClawChatView extends ItemView {
     if (this.messagesEl) {
       // Use requestAnimationFrame to ensure DOM has updated
       window.requestAnimationFrame(() => {
-        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-      });
+        this.messagesEl.scrollTop = this.messagesEl.scrollHeight
+      })
     }
   }
 
   private autoResize(): void {
-    this.inputEl.setCssStyles({ height: "auto" });
+    this.inputEl.setCssStyles({ height: 'auto' })
     this.inputEl.setCssStyles({
-      height: Math.min(this.inputEl.scrollHeight, 150) + "px",
-    });
+      height: Math.min(this.inputEl.scrollHeight, 150) + 'px',
+    })
   }
 }
 
 // ─── Main Plugin ─────────────────────────────────────────────────────
 
 export default class OpenClawPlugin extends Plugin {
-  settings: OpenClawSettings = DEFAULT_SETTINGS;
-  gateway: GatewayClient | null = null;
-  gatewayConnected = false;
-  lastGatewayConnectError = "";
-  chatView: OpenClawChatView | null = null;
+  settings: OpenClawSettings = DEFAULT_SETTINGS
+  gateway: GatewayClient | null = null
+  gatewayConnected = false
+  lastGatewayConnectError = ''
+  chatView: OpenClawChatView | null = null
   // Consecutive close events with no successful hello in between.
   // After a few in a row, we surface the patch hint — a likely sign the
   // gateway is rejecting our origin during the websocket handshake.
-  private handshakeFailuresInARow = 0;
-  private patchHintShownThisSession = false;
+  private handshakeFailuresInARow = 0
+  private patchHintShownThisSession = false
 
   async onload(): Promise<void> {
-    await this.loadSettings();
+    await this.loadSettings()
 
-    this.registerView(VIEW_TYPE, (leaf) => new OpenClawChatView(leaf, this));
+    this.registerView(VIEW_TYPE, (leaf) => new OpenClawChatView(leaf, this))
 
     // Ribbon icon
-    this.addRibbonIcon("message-square", "OcO chat", () => {
-      void this.activateView();
-    });
+    this.addRibbonIcon('message-square', 'OcO chat', () => {
+      void this.activateView()
+    })
 
     // Commands
     this.addCommand({
-      id: "toggle-chat",
-      name: "Toggle chat sidebar",
+      id: 'toggle-chat',
+      name: 'Toggle chat sidebar',
       callback: () => void this.activateView(),
-    });
+    })
 
     this.addCommand({
-      id: "ask-about-note",
-      name: "Ask about current note",
+      id: 'ask-about-note',
+      name: 'Ask about current note',
       callback: () => void this.askAboutNote(),
-    });
+    })
 
     this.addCommand({
-      id: "reconnect",
-      name: "Reconnect to gateway",
+      id: 'reconnect',
+      name: 'Reconnect to gateway',
       callback: () => void this.connectGateway(),
-    });
+    })
 
     this.addCommand({
-      id: "setup",
-      name: "Run setup wizard",
+      id: 'setup',
+      name: 'Run setup wizard',
       callback: () => new OnboardingModal(this.app, this).open(),
-    });
+    })
 
-    this.addSettingTab(new OpenClawSettingTab(this.app, this));
+    this.addSettingTab(new OpenClawSettingTab(this.app, this))
 
     // Show onboarding on first run, otherwise auto-connect and open chat
     if (!this.settings.onboardingComplete) {
       // Small delay so Obsidian finishes loading
-      window.setTimeout(() => new OnboardingModal(this.app, this).open(), 500);
+      window.setTimeout(() => new OnboardingModal(this.app, this).open(), 500)
     } else {
-      void this.connectGateway();
+      void this.connectGateway()
       // Auto-open chat sidebar after workspace is ready
       this.app.workspace.onLayoutReady(() => {
-        void this.activateView();
-      });
+        void this.activateView()
+      })
     }
   }
 
   onunload(): void {
-    this.gateway?.stop();
-    this.gateway = null;
-    this.gatewayConnected = false;
+    this.gateway?.stop()
+    this.gateway = null
+    this.gatewayConnected = false
   }
 
   async loadSettings(): Promise<void> {
-    const data = (await this.loadData()) as Partial<OpenClawSettings> | null;
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {});
+    const data = (await this.loadData()) as Partial<OpenClawSettings> | null
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, data ?? {})
   }
 
   getCloseConfirmDisabled(): boolean {
-    return this.settings.confirmCloseDisabled === true;
+    return this.settings.confirmCloseDisabled === true
   }
 
   setCloseConfirmDisabled(disabled: boolean): void {
-    this.settings.confirmCloseDisabled = disabled;
-    void this.saveSettings();
+    this.settings.confirmCloseDisabled = disabled
+    void this.saveSettings()
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.saveData(this.settings)
   }
 
   async connectGateway(): Promise<void> {
-    this.gateway?.stop();
-    this.gatewayConnected = false;
-    this.lastGatewayConnectError = "";
-    this.chatView?.updateStatus();
+    this.gateway?.stop()
+    this.gatewayConnected = false
+    this.lastGatewayConnectError = ''
+    this.chatView?.updateStatus()
 
-    const rawUrl = this.settings.gatewayUrl.trim();
-    if (!rawUrl) return;
+    const rawUrl = this.settings.gatewayUrl.trim()
+    if (!rawUrl) return
 
     // Normalize URL (accept https:// and http:// as well)
-    const url = normalizeGatewayUrl(rawUrl);
+    const url = normalizeGatewayUrl(rawUrl)
     if (!url) {
       new Notice(
-        "OcO: Invalid gateway URL. Use ws://127.0.0.1:18789 (or your custom address).",
-      );
-      return;
+        'OcO: Invalid gateway URL. Use ws://127.0.0.1:18789 (or your custom address).'
+      )
+      return
     }
 
     // Persist the normalized form if it changed
     if (url !== rawUrl) {
-      this.settings.gatewayUrl = url;
-      await this.saveSettings();
+      this.settings.gatewayUrl = url
+      await this.saveSettings()
     }
 
     // Get or create device identity for scope authorization
-    let deviceIdentity: DeviceIdentity | undefined;
+    let deviceIdentity: DeviceIdentity | undefined
     try {
       deviceIdentity = await getOrCreateDeviceIdentity(
         () => this.loadData(),
-        (data) => this.saveData(data),
-      );
+        (data) => this.saveData(data)
+      )
     } catch (e) {
       console.warn(
-        "[OcO] Device identity creation failed, connecting without scopes:",
-        e,
-      );
+        '[OcO] Device identity creation failed, connecting without scopes:',
+        e
+      )
     }
 
     this.gateway = new GatewayClient({
@@ -5234,110 +5119,110 @@ export default class OpenClawPlugin extends Plugin {
       token: this.settings.token.trim() || undefined,
       deviceIdentity,
       onHello: () => {
-        this.gatewayConnected = true;
-        this.lastGatewayConnectError = "";
-        this.handshakeFailuresInARow = 0;
-        this.chatView?.updateStatus();
-        this.chatView?.hidePairingBanner(); // Dismiss pairing banner on successful connection
-        void this.chatView?.loadHistory();
-        void this.chatView?.renderTabs();
-        void this.chatView?.loadAgents();
-        void this.chatView?.loadDefaults();
+        this.gatewayConnected = true
+        this.lastGatewayConnectError = ''
+        this.handshakeFailuresInARow = 0
+        this.chatView?.updateStatus()
+        this.chatView?.hidePairingBanner() // Dismiss pairing banner on successful connection
+        void this.chatView?.loadHistory()
+        void this.chatView?.renderTabs()
+        void this.chatView?.loadAgents()
+        void this.chatView?.loadDefaults()
         // Restore persisted model selection
         if (this.settings.currentModel && this.chatView) {
-          this.chatView.currentModel = this.settings.currentModel;
-          this.chatView.updateModelPill();
+          this.chatView.currentModel = this.settings.currentModel
+          this.chatView.updateModelPill()
         }
       },
       onClose: (info) => {
-        const wasConnected = this.gatewayConnected;
-        this.gatewayConnected = false;
-        this.chatView?.updateStatus();
+        const wasConnected = this.gatewayConnected
+        this.gatewayConnected = false
+        this.chatView?.updateStatus()
         // Show pairing banner if needed
-        const reason = info.reason.toLowerCase();
+        const reason = info.reason.toLowerCase()
         if (
-          reason.includes("pair") ||
-          reason.includes("device") ||
-          reason.includes("approval") ||
-          reason.includes("scope") ||
-          reason.includes("auth")
+          reason.includes('pair') ||
+          reason.includes('device') ||
+          reason.includes('approval') ||
+          reason.includes('scope') ||
+          reason.includes('auth')
         ) {
-          this.chatView?.showPairingBanner();
+          this.chatView?.showPairingBanner()
         }
         // Track handshake-only failures (closed without ever reaching onHello).
         // 3+ in a row with no descriptive reason is a strong hint the gateway
         // rejected our origin at the websocket upgrade — show the patch tip once.
         if (!wasConnected) {
-          this.handshakeFailuresInARow += 1;
-          const lacksReason = !info.reason || info.reason.trim() === "";
+          this.handshakeFailuresInARow += 1
+          const lacksReason = !info.reason || info.reason.trim() === ''
           if (
             this.handshakeFailuresInARow >= 3 &&
             lacksReason &&
             !this.patchHintShownThisSession
           ) {
-            this.patchHintShownThisSession = true;
+            this.patchHintShownThisSession = true
             new Notice(
-              "OcO: handshake keeps failing. If your gateway is reachable, you may need to (re-)apply the origin patch. Open Settings → OcO → Run setup wizard for the command.",
-              12000,
-            );
+              'OcO: handshake keeps failing. If your gateway is reachable, you may need to (re-)apply the origin patch. Open Settings → OcO → Run setup wizard for the command.',
+              12000
+            )
           }
         }
       },
       onConnectError: (message) => {
-        this.lastGatewayConnectError = message;
+        this.lastGatewayConnectError = message
       },
       onEvent: (evt) => {
-        if (evt.event === "chat") {
-          this.chatView?.handleChatEvent(evt.payload);
-        } else if (evt.event === "stream" || evt.event === "agent") {
-          this.chatView?.handleStreamEvent(evt.payload);
+        if (evt.event === 'chat') {
+          this.chatView?.handleChatEvent(evt.payload)
+        } else if (evt.event === 'stream' || evt.event === 'agent') {
+          this.chatView?.handleStreamEvent(evt.payload)
         }
       },
-    });
+    })
 
-    this.gateway.start();
+    this.gateway.start()
   }
 
   async activateView(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE)
     if (existing.length > 0) {
-      this.app.workspace.setActiveLeaf(existing[0], { focus: true });
-      return;
+      this.app.workspace.setActiveLeaf(existing[0], { focus: true })
+      return
     }
-    const leaf = this.app.workspace.getRightLeaf(false);
+    const leaf = this.app.workspace.getRightLeaf(false)
     if (leaf) {
-      await leaf.setViewState({ type: VIEW_TYPE, active: true });
-      this.app.workspace.setActiveLeaf(leaf, { focus: true });
+      await leaf.setViewState({ type: VIEW_TYPE, active: true })
+      this.app.workspace.setActiveLeaf(leaf, { focus: true })
     }
   }
 
   async askAboutNote(): Promise<void> {
-    const file = this.app.workspace.getActiveFile();
+    const file = this.app.workspace.getActiveFile()
     if (!file) {
-      new Notice("No active note");
-      return;
+      new Notice('No active note')
+      return
     }
 
-    const content = await this.app.vault.read(file);
+    const content = await this.app.vault.read(file)
     if (!content.trim()) {
-      new Notice("Note is empty");
-      return;
+      new Notice('Note is empty')
+      return
     }
 
-    await this.activateView();
+    await this.activateView()
 
     if (!this.chatView || !this.gateway?.connected) {
-      new Notice("Not connected to OcO");
-      return;
+      new Notice('Not connected to OcO')
+      return
     }
 
-    const message = `Here is my current note "${file.basename}":\n\n${content}\n\nWhat can you tell me about this?`;
+    const message = `Here is my current note "${file.basename}":\n\n${content}\n\nWhat can you tell me about this?`
     const inputEl = this.chatView.containerEl.querySelector(
-      ".openclaw-input",
-    ) as HTMLTextAreaElement;
+      '.openclaw-input'
+    ) as HTMLTextAreaElement
     if (inputEl) {
-      inputEl.value = message;
-      inputEl.focus();
+      inputEl.value = message
+      inputEl.focus()
     }
   }
 }
@@ -5347,175 +5232,171 @@ export default class OpenClawPlugin extends Plugin {
 // ─── Model Picker Modal ─────────────────────────────────────────────
 
 class ModelPickerModal extends Modal {
-  plugin: OpenClawPlugin;
-  chatView: OpenClawChatView;
-  private models: ModelInfo[] = [];
-  private currentModel: string = "";
-  private selectedProvider: string | null = null;
+  plugin: OpenClawPlugin
+  chatView: OpenClawChatView
+  private models: ModelInfo[] = []
+  private currentModel: string = ''
+  private selectedProvider: string | null = null
 
   constructor(app: App, plugin: OpenClawPlugin, chatView: OpenClawChatView) {
-    super(app);
-    this.plugin = plugin;
-    this.chatView = chatView;
+    super(app)
+    this.plugin = plugin
+    this.chatView = chatView
   }
 
   async onOpen(): Promise<void> {
-    this.modalEl.addClass("openclaw-picker");
-    this.contentEl.createDiv("openclaw-picker-loading").textContent =
-      "Loading models...";
+    this.modalEl.addClass('openclaw-picker')
+    this.contentEl.createDiv('openclaw-picker-loading').textContent =
+      'Loading models...'
 
     try {
-      const result = (await this.plugin.gateway?.request("models.list", {})) as
+      const result = (await this.plugin.gateway?.request('models.list', {})) as
         | { models?: ModelInfo[] }
-        | undefined;
-      this.models = result?.models || [];
+        | undefined
+      this.models = result?.models || []
     } catch {
-      this.models = [];
+      this.models = []
     }
 
     // Normalize currentModel to always be provider/id format
-    this.currentModel = this.chatView.currentModel || "";
-    if (this.currentModel && !this.currentModel.includes("/")) {
+    this.currentModel = this.chatView.currentModel || ''
+    if (this.currentModel && !this.currentModel.includes('/')) {
       const match = this.models.find(
-        (m: ModelInfo) => m.id === this.currentModel,
-      );
-      if (match) this.currentModel = `${match.provider}/${match.id}`;
+        (m: ModelInfo) => m.id === this.currentModel
+      )
+      if (match) this.currentModel = `${match.provider}/${match.id}`
     }
 
     // Auto-select provider of current model
-    if (this.currentModel.includes("/")) {
-      this.selectedProvider = this.currentModel.split("/")[0];
+    if (this.currentModel.includes('/')) {
+      this.selectedProvider = this.currentModel.split('/')[0]
     }
 
     // If only one provider, skip straight to models
-    const providers = new Set(this.models.map((m: ModelInfo) => m.provider));
+    const providers = new Set(this.models.map((m: ModelInfo) => m.provider))
     if (providers.size === 1) {
-      this.renderModels([...providers][0]);
+      this.renderModels([...providers][0])
     } else {
-      this.renderProviders();
+      this.renderProviders()
     }
   }
 
   onClose(): void {
-    this.contentEl.empty();
+    this.contentEl.empty()
   }
 
   private renderProviders(): void {
-    const { contentEl } = this;
-    contentEl.empty();
+    const { contentEl } = this
+    contentEl.empty()
 
     // Group models by provider
-    const providerMap = new Map<string, ModelInfo[]>();
+    const providerMap = new Map<string, ModelInfo[]>()
     for (const m of this.models) {
-      const p = m.provider || "unknown";
-      if (!providerMap.has(p)) providerMap.set(p, []);
-      providerMap.get(p)!.push(m);
+      const p = m.provider || 'unknown'
+      if (!providerMap.has(p)) providerMap.set(p, [])
+      providerMap.get(p)!.push(m)
     }
 
     // Current provider from currentModel
-    const currentProvider = this.currentModel.includes("/")
-      ? this.currentModel.split("/")[0]
-      : "";
+    const currentProvider = this.currentModel.includes('/')
+      ? this.currentModel.split('/')[0]
+      : ''
 
-    const list = contentEl.createDiv("openclaw-picker-list");
+    const list = contentEl.createDiv('openclaw-picker-list')
 
     for (const [provider, models] of providerMap) {
-      const isCurrent = provider === currentProvider;
+      const isCurrent = provider === currentProvider
       const row = list.createDiv({
-        cls: `openclaw-picker-row${isCurrent ? " active" : ""}`,
-      });
+        cls: `openclaw-picker-row${isCurrent ? ' active' : ''}`,
+      })
 
-      const left = row.createDiv("openclaw-picker-row-left");
-      if (isCurrent)
-        left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
-      left.createSpan({ text: provider, cls: "openclaw-picker-provider-name" });
+      const left = row.createDiv('openclaw-picker-row-left')
+      if (isCurrent) left.createSpan({ text: '● ', cls: 'openclaw-picker-dot' })
+      left.createSpan({ text: provider, cls: 'openclaw-picker-provider-name' })
 
-      const right = row.createDiv("openclaw-picker-row-right");
+      const right = row.createDiv('openclaw-picker-row-right')
       right.createSpan({
-        text: `${models.length} model${models.length !== 1 ? "s" : ""}`,
-        cls: "openclaw-picker-meta",
-      });
-      right.createSpan({ text: " →", cls: "openclaw-picker-arrow" });
+        text: `${models.length} model${models.length !== 1 ? 's' : ''}`,
+        cls: 'openclaw-picker-meta',
+      })
+      right.createSpan({ text: ' →', cls: 'openclaw-picker-arrow' })
 
-      row.addEventListener("click", () => {
-        this.selectedProvider = provider;
-        this.renderModels(provider);
-      });
+      row.addEventListener('click', () => {
+        this.selectedProvider = provider
+        this.renderModels(provider)
+      })
     }
 
     // Footer
     const footer = contentEl.createDiv(
-      "openclaw-picker-hint openclaw-picker-footer",
-    );
-    footer.appendText("Want more models? ");
-    footer.createEl("a", {
-      text: "Add them in your gateway config.",
-      href: "https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models",
-    });
+      'openclaw-picker-hint openclaw-picker-footer'
+    )
+    footer.appendText('Want more models? ')
+    footer.createEl('a', {
+      text: 'Add them in your gateway config.',
+      href: 'https://docs.openclaw.ai/gateway/configuration#choose-and-configure-models',
+    })
   }
 
   private renderModels(provider: string): void {
-    const { contentEl } = this;
-    contentEl.empty();
+    const { contentEl } = this
+    contentEl.empty()
 
     // Back button
-    const providers = new Set(this.models.map((m: ModelInfo) => m.provider));
+    const providers = new Set(this.models.map((m: ModelInfo) => m.provider))
     if (providers.size > 1) {
-      const header = contentEl.createDiv("openclaw-picker-header");
-      const backBtn = header.createEl("button", {
-        cls: "openclaw-picker-back",
-        text: "← " + provider,
-      });
-      backBtn.addEventListener("click", () => this.renderProviders());
+      const header = contentEl.createDiv('openclaw-picker-header')
+      const backBtn = header.createEl('button', {
+        cls: 'openclaw-picker-back',
+        text: '← ' + provider,
+      })
+      backBtn.addEventListener('click', () => this.renderProviders())
     }
 
-    const models = this.models.filter(
-      (m: ModelInfo) => m.provider === provider,
-    );
+    const models = this.models.filter((m: ModelInfo) => m.provider === provider)
     const list = contentEl.createDiv(
-      "openclaw-picker-list openclaw-picker-model-list",
-    );
+      'openclaw-picker-list openclaw-picker-model-list'
+    )
 
     for (const m of models) {
-      const fullId = `${m.provider}/${m.id}`;
-      const isCurrent = fullId === this.currentModel;
+      const fullId = `${m.provider}/${m.id}`
+      const isCurrent = fullId === this.currentModel
       const row = list.createDiv({
-        cls: `openclaw-picker-row${isCurrent ? " active" : ""}`,
-      });
+        cls: `openclaw-picker-row${isCurrent ? ' active' : ''}`,
+      })
 
-      const left = row.createDiv("openclaw-picker-row-left");
-      if (isCurrent)
-        left.createSpan({ text: "● ", cls: "openclaw-picker-dot" });
-      left.createSpan({ text: m.name || m.id });
+      const left = row.createDiv('openclaw-picker-row-left')
+      if (isCurrent) left.createSpan({ text: '● ', cls: 'openclaw-picker-dot' })
+      left.createSpan({ text: m.name || m.id })
 
       // Always clickable - even the current model (user might want to re-select it)
       row.addEventListener(
-        "click",
+        'click',
         () =>
           void (async () => {
-            if (!this.plugin.gateway?.connected) return;
-            row.addClass("openclaw-picker-selecting");
-            row.textContent = "Switching...";
+            if (!this.plugin.gateway?.connected) return
+            row.addClass('openclaw-picker-selecting')
+            row.textContent = 'Switching...'
             try {
-              await this.plugin.gateway.request("chat.send", {
+              await this.plugin.gateway.request('chat.send', {
                 sessionKey: this.plugin.settings.sessionKey,
                 message: `/model ${fullId}`,
                 deliver: false,
-                idempotencyKey: "model-" + Date.now(),
-              });
-              this.chatView.currentModel = fullId;
-              this.chatView.currentModelSetAt = Date.now();
-              this.plugin.settings.currentModel = fullId;
-              await this.plugin.saveSettings();
-              this.chatView.updateModelPill();
-              new Notice(`Model: ${m.name || m.id}`);
-              this.close();
+                idempotencyKey: 'model-' + Date.now(),
+              })
+              this.chatView.currentModel = fullId
+              this.chatView.currentModelSetAt = Date.now()
+              this.plugin.settings.currentModel = fullId
+              await this.plugin.saveSettings()
+              this.chatView.updateModelPill()
+              new Notice(`Model: ${m.name || m.id}`)
+              this.close()
             } catch (e) {
-              new Notice(`Failed: ${e}`);
-              this.renderModels(provider);
+              new Notice(`Failed: ${e}`)
+              this.renderModels(provider)
             }
-          })(),
-      );
+          })()
+      )
     }
   }
 }
@@ -5524,118 +5405,118 @@ class ModelPickerModal extends Modal {
 
 class _ConfirmModal extends Modal {
   private config: {
-    title: string;
-    message: string;
-    confirmText: string;
-    onConfirm: () => void;
-  };
+    title: string
+    message: string
+    confirmText: string
+    onConfirm: () => void
+  }
 
   constructor(
     app: App,
     config: {
-      title: string;
-      message: string;
-      confirmText: string;
-      onConfirm: () => void;
-    },
+      title: string
+      message: string
+      confirmText: string
+      onConfirm: () => void
+    }
   ) {
-    super(app);
-    this.config = config;
+    super(app)
+    this.config = config
   }
 
   onOpen(): void {
-    const { contentEl } = this;
-    contentEl.addClass("openclaw-confirm-modal");
-    contentEl.createEl("h3", {
+    const { contentEl } = this
+    contentEl.addClass('openclaw-confirm-modal')
+    contentEl.createEl('h3', {
       text: this.config.title,
-      cls: "openclaw-confirm-title",
-    });
-    contentEl.createEl("p", {
+      cls: 'openclaw-confirm-title',
+    })
+    contentEl.createEl('p', {
       text: this.config.message,
-      cls: "openclaw-confirm-message",
-    });
-    const btnRow = contentEl.createDiv("openclaw-confirm-buttons");
-    const cancelBtn = btnRow.createEl("button", {
-      text: "Cancel",
-      cls: "openclaw-confirm-cancel",
-    });
-    cancelBtn.addEventListener("click", () => this.close());
-    const confirmBtn = btnRow.createEl("button", {
+      cls: 'openclaw-confirm-message',
+    })
+    const btnRow = contentEl.createDiv('openclaw-confirm-buttons')
+    const cancelBtn = btnRow.createEl('button', {
+      text: 'Cancel',
+      cls: 'openclaw-confirm-cancel',
+    })
+    cancelBtn.addEventListener('click', () => this.close())
+    const confirmBtn = btnRow.createEl('button', {
       text: this.config.confirmText,
-      cls: "openclaw-confirm-ok",
-    });
-    confirmBtn.addEventListener("click", () => {
-      this.close();
-      this.config.onConfirm();
-    });
+      cls: 'openclaw-confirm-ok',
+    })
+    confirmBtn.addEventListener('click', () => {
+      this.close()
+      this.config.onConfirm()
+    })
   }
 
   onClose(): void {
-    this.contentEl.empty();
+    this.contentEl.empty()
   }
 }
 
 // ─── Confirm Close Modal (with "don't ask again") ───────────────────
 
 class ConfirmCloseModal extends Modal {
-  private title: string;
-  private message: string;
-  private callback: (result: boolean, dontAsk: boolean) => void;
-  private checkboxEl!: HTMLInputElement;
+  private title: string
+  private message: string
+  private callback: (result: boolean, dontAsk: boolean) => void
+  private checkboxEl!: HTMLInputElement
 
   constructor(
     app: App,
     title: string,
     message: string,
-    callback: (result: boolean, dontAsk: boolean) => void,
+    callback: (result: boolean, dontAsk: boolean) => void
   ) {
-    super(app);
-    this.title = title;
-    this.message = message;
-    this.callback = callback;
+    super(app)
+    this.title = title
+    this.message = message
+    this.callback = callback
   }
 
   onOpen(): void {
-    const { contentEl } = this;
-    contentEl.addClass("openclaw-confirm-modal");
-    contentEl.createEl("h3", {
+    const { contentEl } = this
+    contentEl.addClass('openclaw-confirm-modal')
+    contentEl.createEl('h3', {
       text: this.title,
-      cls: "openclaw-confirm-title",
-    });
-    contentEl.createEl("p", {
+      cls: 'openclaw-confirm-title',
+    })
+    contentEl.createEl('p', {
       text: this.message,
-      cls: "openclaw-confirm-message",
-    });
+      cls: 'openclaw-confirm-message',
+    })
 
-    const checkRow = contentEl.createDiv("openclaw-confirm-check");
-    this.checkboxEl = checkRow.createEl("input", { type: "checkbox" });
-    this.checkboxEl.id = "confirm-dont-ask";
-    checkRow.createEl("label", {
+    const checkRow = contentEl.createDiv('openclaw-confirm-check')
+    this.checkboxEl = checkRow.createEl('input', { type: 'checkbox' })
+    this.checkboxEl.id = 'confirm-dont-ask'
+    checkRow.createEl('label', {
       text: "Don't ask me again",
-      attr: { for: "confirm-dont-ask" },
-    });
+      attr: { for: 'confirm-dont-ask' },
+    })
 
-    const btnRow = contentEl.createDiv("openclaw-confirm-buttons");
-    const cancelBtn = btnRow.createEl("button", {
-      text: "Cancel",
-      cls: "openclaw-confirm-cancel",
-    });
-    cancelBtn.addEventListener("click", () => {
-      this.callback(false, false);
-      this.close();
-    });
-    const confirmBtn = btnRow.createEl("button", {
-      text: this.title.startsWith("Reset") ? "Reset" : "Close",
-      cls: "openclaw-confirm-ok",
-    });
-    confirmBtn.addEventListener("click", () => {
-      this.callback(true, this.checkboxEl.checked);
-      this.close();
-    });
+    const btnRow = contentEl.createDiv('openclaw-confirm-buttons')
+    const cancelBtn = btnRow.createEl('button', {
+      text: 'Cancel',
+      cls: 'openclaw-confirm-cancel',
+    })
+    cancelBtn.addEventListener('click', () => {
+      this.callback(false, false)
+      this.close()
+    })
+    const confirmBtn = btnRow.createEl('button', {
+      text: this.title.startsWith('Reset') ? 'Reset' : 'Close',
+      cls: 'openclaw-confirm-ok',
+    })
+    confirmBtn.addEventListener('click', () => {
+      this.callback(true, this.checkboxEl.checked)
+      this.close()
+    })
   }
 
   onClose(): void {
-    this.contentEl.empty();
+    this.contentEl.empty()
   }
 }
 
@@ -5643,230 +5524,230 @@ class ConfirmCloseModal extends Modal {
 
 class _TextInputModal extends Modal {
   private config: {
-    title: string;
-    placeholder: string;
-    confirmText: string;
-    initialValue?: string;
-    onConfirm: (value: string) => void;
-  };
-  private inputEl!: HTMLInputElement;
+    title: string
+    placeholder: string
+    confirmText: string
+    initialValue?: string
+    onConfirm: (value: string) => void
+  }
+  private inputEl!: HTMLInputElement
 
   constructor(
     app: App,
     config: {
-      title: string;
-      placeholder: string;
-      confirmText: string;
-      initialValue?: string;
-      onConfirm: (value: string) => void;
-    },
+      title: string
+      placeholder: string
+      confirmText: string
+      initialValue?: string
+      onConfirm: (value: string) => void
+    }
   ) {
-    super(app);
-    this.config = config;
+    super(app)
+    this.config = config
   }
 
   onOpen(): void {
-    const { contentEl } = this;
-    contentEl.addClass("openclaw-confirm-modal");
-    contentEl.createEl("h3", {
+    const { contentEl } = this
+    contentEl.addClass('openclaw-confirm-modal')
+    contentEl.createEl('h3', {
       text: this.config.title,
-      cls: "openclaw-confirm-title",
-    });
-    this.inputEl = contentEl.createEl("input", {
-      type: "text",
+      cls: 'openclaw-confirm-title',
+    })
+    this.inputEl = contentEl.createEl('input', {
+      type: 'text',
       placeholder: this.config.placeholder,
-      cls: "openclaw-text-input",
-    });
-    if (this.config.initialValue) this.inputEl.value = this.config.initialValue;
-    this.inputEl.focus();
-    this.inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        this.submit();
+      cls: 'openclaw-text-input',
+    })
+    if (this.config.initialValue) this.inputEl.value = this.config.initialValue
+    this.inputEl.focus()
+    this.inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        this.submit()
       }
-    });
-    const btnRow = contentEl.createDiv("openclaw-confirm-buttons");
-    const cancelBtn = btnRow.createEl("button", {
-      text: "Cancel",
-      cls: "openclaw-confirm-cancel",
-    });
-    cancelBtn.addEventListener("click", () => this.close());
-    const confirmBtn = btnRow.createEl("button", {
+    })
+    const btnRow = contentEl.createDiv('openclaw-confirm-buttons')
+    const cancelBtn = btnRow.createEl('button', {
+      text: 'Cancel',
+      cls: 'openclaw-confirm-cancel',
+    })
+    cancelBtn.addEventListener('click', () => this.close())
+    const confirmBtn = btnRow.createEl('button', {
       text: this.config.confirmText,
-      cls: "openclaw-confirm-ok",
-    });
-    confirmBtn.addEventListener("click", () => this.submit());
+      cls: 'openclaw-confirm-ok',
+    })
+    confirmBtn.addEventListener('click', () => this.submit())
   }
 
   private submit(): void {
-    const value = this.inputEl.value.trim();
-    if (!value) return;
-    this.close();
-    this.config.onConfirm(value);
+    const value = this.inputEl.value.trim()
+    if (!value) return
+    this.close()
+    this.config.onConfirm(value)
   }
 
   onClose(): void {
-    this.contentEl.empty();
+    this.contentEl.empty()
   }
 }
 
 // ─── Attachment Picker ───────────────────────────────────────────────
 
 class _AttachmentModal extends FuzzySuggestModal<TFile> {
-  private files: TFile[];
-  private onChoose: (file: TFile) => void;
+  private files: TFile[]
+  private onChoose: (file: TFile) => void
 
   constructor(app: App, files: TFile[], onChoose: (file: TFile) => void) {
-    super(app);
-    this.files = files;
-    this.onChoose = onChoose;
-    this.setPlaceholder("Search files to attach...");
+    super(app)
+    this.files = files
+    this.onChoose = onChoose
+    this.setPlaceholder('Search files to attach...')
   }
 
   getItems(): TFile[] {
-    return this.files;
+    return this.files
   }
 
   getItemText(file: TFile): string {
-    return file.path;
+    return file.path
   }
 
   onChooseItem(file: TFile): void {
-    this.onChoose(file);
+    this.onChoose(file)
   }
 }
 
 // ─── Settings Tab ────────────────────────────────────────────────────
 
 class OpenClawSettingTab extends PluginSettingTab {
-  plugin: OpenClawPlugin;
+  plugin: OpenClawPlugin
 
   constructor(app: App, plugin: OpenClawPlugin) {
-    super(app, plugin);
-    this.plugin = plugin;
+    super(app, plugin)
+    this.plugin = plugin
   }
 
   display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
+    const { containerEl } = this
+    containerEl.empty()
 
-    new Setting(containerEl).setName("Chat").setHeading();
+    new Setting(containerEl).setName('Chat').setHeading()
 
     // ─── Setup Wizard (top, most prominent) ───────────────────────
-    const wizardSection = containerEl.createDiv("openclaw-settings-wizard");
-    const wizardDesc = wizardSection.createDiv("openclaw-settings-wizard-desc");
-    wizardDesc.createEl("strong", { text: "Setup wizard" });
-    wizardDesc.createEl("p", {
-      text: "The easiest way to connect. Walks you through gateway setup and device pairing step by step.",
-      cls: "setting-item-description",
-    });
-    const wizardBtn = wizardSection.createEl("button", {
-      text: "Run setup wizard",
-      cls: "mod-cta openclaw-settings-wizard-btn",
-    });
-    wizardBtn.addEventListener("click", () => {
-      new OnboardingModal(this.app, this.plugin).open();
-    });
+    const wizardSection = containerEl.createDiv('openclaw-settings-wizard')
+    const wizardDesc = wizardSection.createDiv('openclaw-settings-wizard-desc')
+    wizardDesc.createEl('strong', { text: 'Setup wizard' })
+    wizardDesc.createEl('p', {
+      text: 'The easiest way to connect. Walks you through gateway setup and device pairing step by step.',
+      cls: 'setting-item-description',
+    })
+    const wizardBtn = wizardSection.createEl('button', {
+      text: 'Run setup wizard',
+      cls: 'mod-cta openclaw-settings-wizard-btn',
+    })
+    wizardBtn.addEventListener('click', () => {
+      new OnboardingModal(this.app, this.plugin).open()
+    })
 
     // ─── Status ──────────────────────────────────────────────────
-    const statusSection = containerEl.createDiv("openclaw-settings-status");
-    const connected = this.plugin.gatewayConnected;
+    const statusSection = containerEl.createDiv('openclaw-settings-status')
+    const connected = this.plugin.gatewayConnected
     statusSection.createSpan({
-      cls: `openclaw-settings-dot ${connected ? "connected" : "disconnected"}`,
-    });
+      cls: `openclaw-settings-dot ${connected ? 'connected' : 'disconnected'}`,
+    })
     statusSection.createSpan({
-      text: connected ? "Connected" : "Disconnected",
-      cls: "openclaw-settings-status-text",
-    });
+      text: connected ? 'Connected' : 'Disconnected',
+      cls: 'openclaw-settings-status-text',
+    })
     if (this.plugin.settings.gatewayUrl) {
       statusSection.createSpan({
-        text: ` — ${this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, "")}`,
-        cls: "openclaw-settings-status-url",
-      });
+        text: ` — ${this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, '')}`,
+        cls: 'openclaw-settings-status-url',
+      })
     }
 
     // ─── Session ──────────────────────────────────────────────────
-    new Setting(containerEl).setName("Session").setHeading();
+    new Setting(containerEl).setName('Session').setHeading()
 
     new Setting(containerEl)
-      .setName("Conversation")
+      .setName('Conversation')
       .setDesc('Current conversation key. Use "main" for the default session.')
       .addText((text) =>
         text
-          .setPlaceholder("Main")
+          .setPlaceholder('Main')
           .setValue(this.plugin.settings.sessionKey)
           .onChange(async (value) => {
-            this.plugin.settings.sessionKey = value || "main";
-            await this.plugin.saveSettings();
-            this.plugin.chatView?.syncFromSettings();
-          }),
+            this.plugin.settings.sessionKey = value || 'main'
+            await this.plugin.saveSettings()
+            this.plugin.chatView?.syncFromSettings()
+          })
       )
       .addButton((btn) =>
-        btn.setButtonText("Reset to main").onClick(async () => {
-          this.plugin.settings.sessionKey = "main";
-          await this.plugin.saveSettings();
-          this.display(); // refresh the settings UI
-          this.plugin.chatView?.syncFromSettings();
-          new Notice("Reset to main conversation");
-        }),
-      );
+        btn.setButtonText('Reset to main').onClick(async () => {
+          this.plugin.settings.sessionKey = 'main'
+          await this.plugin.saveSettings()
+          this.display() // refresh the settings UI
+          this.plugin.chatView?.syncFromSettings()
+          new Notice('Reset to main conversation')
+        })
+      )
 
     // ─── Behavior ─────────────────────────────────────────────────
     new Setting(containerEl)
-      .setName("Confirm before closing tabs")
-      .setDesc("Show a confirmation dialog before closing or resetting tabs")
+      .setName('Confirm before closing tabs')
+      .setDesc('Show a confirmation dialog before closing or resetting tabs')
       .addToggle((toggle) =>
         toggle
           .setValue(!this.plugin.getCloseConfirmDisabled())
           .onChange((value) => {
-            this.plugin.setCloseConfirmDisabled(!value);
-          }),
-      );
+            this.plugin.setCloseConfirmDisabled(!value)
+          })
+      )
 
     // ─── Connection (Advanced) ────────────────────────────────────
     new Setting(containerEl)
-      .setName("Connection")
+      .setName('Connection')
       .setDesc(
-        "These are set automatically by the setup wizard. Edit manually only if you know what you're doing.",
+        "These are set automatically by the setup wizard. Edit manually only if you know what you're doing."
       )
-      .setHeading();
+      .setHeading()
 
     new Setting(containerEl)
-      .setName("Gateway URL")
-      .setDesc("Gateway URL (e.g. ws://127.0.0.1:18789)")
+      .setName('Gateway URL')
+      .setDesc('Gateway URL (e.g. ws://127.0.0.1:18789)')
       .addText((text) =>
         text
-          .setPlaceholder("ws://127.0.0.1:18789")
+          .setPlaceholder('ws://127.0.0.1:18789')
           .setValue(this.plugin.settings.gatewayUrl)
           .onChange(async (value) => {
-            const normalized = normalizeGatewayUrl(value);
-            this.plugin.settings.gatewayUrl = normalized || value;
-            await this.plugin.saveSettings();
-          }),
-      );
+            const normalized = normalizeGatewayUrl(value)
+            this.plugin.settings.gatewayUrl = normalized || value
+            await this.plugin.saveSettings()
+          })
+      )
 
     new Setting(containerEl)
-      .setName("Auth token")
-      .setDesc("Gateway auth token")
+      .setName('Auth token')
+      .setDesc('Gateway auth token')
       .addText((text) => {
-        text.inputEl.type = "password";
+        text.inputEl.type = 'password'
         return text
-          .setPlaceholder("Token")
+          .setPlaceholder('Token')
           .setValue(this.plugin.settings.token)
           .onChange(async (value) => {
-            this.plugin.settings.token = value;
-            await this.plugin.saveSettings();
-          });
-      });
+            this.plugin.settings.token = value
+            await this.plugin.saveSettings()
+          })
+      })
 
     new Setting(containerEl)
-      .setName("Reconnect")
-      .setDesc("Re-establish the gateway connection")
+      .setName('Reconnect')
+      .setDesc('Re-establish the gateway connection')
       .addButton((btn) =>
-        btn.setButtonText("Reconnect").onClick(() => {
-          void this.plugin.connectGateway();
-          new Notice("OcO: Reconnecting...");
-        }),
-      );
+        btn.setButtonText('Reconnect').onClick(() => {
+          void this.plugin.connectGateway()
+          new Notice('OcO: Reconnecting...')
+        })
+      )
   }
 }
