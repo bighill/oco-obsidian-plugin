@@ -5463,7 +5463,7 @@ export default class OpenClawPlugin extends Plugin {
     const url = normalizeGatewayUrl(rawUrl);
     if (!url) {
       new Notice(
-        "OcO: Invalid gateway URL. Use your Tailscale Serve URL (e.g. wss://your-machine.tail1234.ts.net)",
+        "OcO: Invalid gateway URL. Use ws://127.0.0.1:18789 (or your custom address).",
       );
       return;
     }
@@ -6092,10 +6092,10 @@ class OpenClawSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Gateway URL")
-      .setDesc("Tailscale Serve URL (e.g. wss://your-machine.tail1234.ts.net)")
+      .setDesc("Gateway URL (e.g. ws://127.0.0.1:18789)")
       .addText((text) =>
         text
-          .setPlaceholder("wss://your-machine.tail1234.ts.net")
+          .setPlaceholder("ws://127.0.0.1:18789")
           .setValue(this.plugin.settings.gatewayUrl)
           .onChange(async (value) => {
             const normalized = normalizeGatewayUrl(value);
