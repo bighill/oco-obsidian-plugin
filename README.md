@@ -56,14 +56,15 @@ See [Building from Source](#building-from-source) below.
 
 ## Connect
 
-The setup wizard opens automatically after install:
+After install, a welcome notice prompts you to configure the connection:
 
-1. **Gateway URL:**
+1. **Open Settings → OcO → Connection**
+2. **Gateway URL:**
    - Default: `ws://127.0.0.1:18789`
    - Custom: `ws://<your-host>:18789`
-2. **Auth Token:** from `~/.openclaw/openclaw.json` → `gateway.auth.token`
-3. Click **Test connection**
-4. **Approve the device** from the OpenClaw dashboard or CLI:
+3. **Auth Token:** from `~/.openclaw/openclaw.json` → `gateway.auth.token`
+4. Click **Reconnect**
+5. **Approve the device** from the OpenClaw dashboard or CLI:
    ```bash
    openclaw devices list
    openclaw devices approve <requestId>
@@ -81,7 +82,6 @@ Done. The device is remembered permanently.
 | `OcO: Toggle chat sidebar` | Open/close the chat panel |
 | `OcO: Ask about current note` | Send the active note as context |
 | `OcO: Reconnect to gateway` | Re-establish the connection |
-| `OcO: Run setup wizard` | Re-run the onboarding flow |
 
 ## Troubleshooting
 

@@ -17,7 +17,6 @@ export interface OpenClawSettings {
   sessionKey: string
   activeAgentId?: string // currently selected agent id
   currentModel?: string // persisted model selection (provider/model format)
-  onboardingComplete: boolean
   deviceId?: string
   devicePublicKey?: string
   devicePrivateKey?: string

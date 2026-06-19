@@ -62,7 +62,6 @@ const DEFAULT_SETTINGS: OpenClawSettings = {
   gatewayUrl: '',
   token: '',
   sessionKey: 'main',
-  onboardingComplete: false,
 }
 
 // ─── Device Identity (Ed25519) ───────────────────────────────────────
@@ -486,956 +485,24 @@ class GatewayClient {
   }
 }
 
-// ─── Onboarding Modal ────────────────────────────────────────────────
+// ─── Welcome Modal ─────────────────────────────────────────────────────
 
-type SetupKey = 'claude1' | 'claude2' | 'googleai' | 'brave' | 'elevenlabs'
-
-class OnboardingModal extends Modal {
-  plugin: OpenClawPlugin
-  private step = 0
-  private path: 'fresh' | 'existing' | null = null
-  private statusEl: HTMLElement | null = null
-  private pairingPollTimer: number | null = null
-
-  // Setup state for fresh install path
-  private setupKeys: Record<SetupKey, string> = {
-    claude1: '',
-    claude2: '',
-    googleai: '',
-    brave: '',
-    elevenlabs: '',
-  }
-  private setupBots: { name: string; model: string }[] = [
-    { name: 'Assistant', model: 'anthropic/claude-sonnet-4-6' },
-  ]
-
-  private static MODELS = [
-    { id: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4' },
-    { id: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4' },
-    { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-    { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  ]
-
-  constructor(app: App, plugin: OpenClawPlugin) {
-    super(app)
-    this.plugin = plugin
-  }
-
+class WelcomeModal extends Modal {
   onOpen(): void {
-    this.modalEl.addClass('openclaw-onboarding')
-    this.renderStep()
-  }
-
-  onClose(): void {
-    if (this.pairingPollTimer) {
-      window.clearInterval(this.pairingPollTimer)
-      this.pairingPollTimer = null
-    }
-  }
-
-  /** Safely render simple HTML (text, <a>, <code>, <strong>) into an element using DOM API */
-  private setRichText(el: HTMLElement, html: string): void {
-    el.empty()
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(`<span>${html}</span>`, 'text/html')
-    const source = doc.body.firstElementChild
-    if (!source) {
-      el.setText(html)
-      return
-    }
-    for (const node of Array.from(source.childNodes)) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        el.appendText(node.textContent ?? '')
-      } else if (node.instanceOf(HTMLElement)) {
-        const tag = node.tagName.toLowerCase()
-        if (tag === 'a') {
-          el.createEl('a', {
-            text: node.textContent ?? '',
-            href: node.getAttribute('href') ?? '',
-          })
-        } else if (tag === 'code') {
-          el.createEl('code', { text: node.textContent ?? '' })
-        } else if (tag === 'strong') {
-          el.createEl('strong', { text: node.textContent ?? '' })
-        } else {
-          el.appendText(node.textContent ?? '')
-        }
-      }
-    }
-  }
-
-  private renderStep(): void {
-    const { contentEl } = this
-    contentEl.empty()
-    this.statusEl = null
-
-    // Step indicator — adapts to path
-    const stepLabels =
-      this.path === 'fresh'
-        ? ['Start', 'Keys', 'Bots', 'Install', 'Connect', 'Pair', 'Done']
-        : this.path === 'existing'
-          ? ['Start', 'Connect', 'Pair', 'Done']
-          : ['Start']
-    const indicator = contentEl.createDiv('openclaw-onboard-steps')
-    stepLabels.forEach((_label, i) => {
-      const dot = indicator.createSpan(
-        'openclaw-step-dot' +
-          (i === this.step ? ' active' : i < this.step ? ' done' : '')
-      )
-      dot.textContent = i < this.step ? '✓' : String(i + 1)
-      if (i < stepLabels.length - 1)
-        indicator.createSpan(
-          'openclaw-step-line' + (i < this.step ? ' done' : '')
-        )
-    })
-
-    // Route to correct step renderer
-    if (this.step === 0) return this.renderWelcome(contentEl)
-
-    if (this.path === 'fresh') {
-      if (this.step === 1) return this.renderKeys(contentEl)
-      if (this.step === 2) return this.renderBots(contentEl)
-      if (this.step === 3) return this.renderInstallCmd(contentEl)
-      if (this.step === 4) return this.renderConnect(contentEl)
-      if (this.step === 5) return this.renderPairing(contentEl)
-      if (this.step === 6) return this.renderDone(contentEl)
-    } else {
-      if (this.step === 1) return this.renderConnect(contentEl)
-      if (this.step === 2) return this.renderPairing(contentEl)
-      if (this.step === 3) return this.renderDone(contentEl)
-    }
-  }
-
-  // ─── Step 0: Welcome (branching) ─────────────────────────────────
-
-  private renderWelcome(el: HTMLElement): void {
-    el.createEl('h2', { text: 'Welcome to OcO' })
-    el.createEl('p', {
+    this.contentEl.createEl('h2', { text: 'Welcome to OcO' })
+    this.contentEl.createEl('p', {
       text: "This plugin connects Obsidian to your OpenClaw AI agent. Your vault becomes the agent's workspace.",
       cls: 'openclaw-onboard-desc',
     })
-
-    this.renderPatchNotice(el)
-
-    const btnRow = el.createDiv(
-      'openclaw-onboard-buttons openclaw-onboard-buttons-vertical'
-    )
-
-    const freshBtn = btnRow.createEl('button', {
-      text: 'I need to install OpenClaw',
-      cls: 'mod-cta openclaw-full-width',
-    })
-    freshBtn.addEventListener('click', () => {
-      this.path = 'fresh'
-      this.step = 1
-      this.renderStep()
-    })
-
-    const existBtn = btnRow.createEl('button', {
-      text: 'OpenClaw is already running',
-      cls: 'openclaw-full-width',
-    })
-    existBtn.addEventListener('click', () => {
-      this.path = 'existing'
-      this.step = 1
-      this.renderStep()
-    })
-  }
-
-  // ─── Required patch notice (shown on welcome + on connect failure) ─
-
-  private renderPatchNotice(el: HTMLElement): void {
-    const box = el.createDiv('openclaw-onboard-warn')
-    const head = box.createDiv('openclaw-onboard-warn-head')
-    head.createSpan({ text: '⚠️ ', cls: 'openclaw-onboard-warn-icon' })
-    head.createEl('strong', {
-      text: 'One-time patch required on your OpenClaw gateway',
-    })
-
-    const body = box.createDiv('openclaw-onboard-warn-body')
-    body.appendText('Obsidian loads from ')
-    body.createEl('code', { text: 'app://obsidian.md' })
-    body.appendText(
-      ', which vanilla OpenClaw rejects. A small idempotent script adds the needed origin fallback. '
-    )
-    body.createEl('strong', { text: 'Re-run after every ' })
-    body.createEl('code', { text: 'openclaw update' })
-    body.createEl('strong', { text: '.' })
-
-    const details = box.createEl('details', {
-      cls: 'openclaw-onboard-warn-details',
-    })
-    details.createEl('summary', { text: 'Show the command' })
-    const cmd =
-      'curl -fsSL https://raw.githubusercontent.com/bighill/oco-obsidian-plugin/main/scripts/patch-openclaw.sh | sudo bash'
-    this.makeCopyBox(details, cmd)
-    const linkLine = details.createDiv('openclaw-onboard-hint')
-    linkLine.appendText('Review the script first: ')
-    linkLine.createEl('a', {
-      text: 'scripts/patch-openclaw.sh',
-      href: 'https://github.com/bighill/oco-obsidian-plugin/blob/main/scripts/patch-openclaw.sh',
-    })
-  }
-
-  // ─── Fresh path: Step 1 — API Keys ───────────────────────────────
-
-  private renderKeys(el: HTMLElement): void {
-    el.createEl('h2', { text: 'Your API keys' })
-    el.createEl('p', {
-      text: "Your bot needs AI model access. Paste your keys below — they'll be included in the install command. Nothing leaves your device.",
+    this.contentEl.createEl('p', {
+      text: 'Go to Settings → OcO → Connection to enter your gateway URL and token.',
       cls: 'openclaw-onboard-desc',
     })
-
-    const fields: {
-      key: SetupKey
-      label: string
-      required?: boolean
-      placeholder: string
-      help: string
-    }[] = [
-      {
-        key: 'claude1',
-        label: 'Claude token',
-        required: true,
-        placeholder: 'sk-ant-...',
-        help: "From <a href='https://console.anthropic.com/settings/keys'>console.anthropic.com</a> or Claude Max OAuth",
-      },
-      {
-        key: 'claude2',
-        label: 'Claude token #2 (parallel requests)',
-        placeholder: 'sk-ant-...',
-        help: 'Optional — enables concurrent requests',
-      },
-      {
-        key: 'googleai',
-        label: 'Google AI API key',
-        placeholder: 'AIza...',
-        help: "Free at <a href='https://aistudio.google.com/apikey'>aistudio.google.com</a> — enables Gemini models",
-      },
-      {
-        key: 'brave',
-        label: 'Brave Search API key',
-        placeholder: 'BSA...',
-        help: "Free at <a href='https://brave.com/search/api/'>brave.com/search/api</a> — web search",
-      },
-      {
-        key: 'elevenlabs',
-        label: 'ElevenLabs API key',
-        placeholder: 'sk_...',
-        help: "Free at <a href='https://elevenlabs.io'>elevenlabs.io</a> — voice/TTS",
-      },
-    ]
-
-    for (const f of fields) {
-      const group = el.createDiv('openclaw-onboard-field')
-      const label = group.createEl('label', { text: f.label })
-      if (f.required) {
-        const req = label.createSpan({ cls: 'oc-req-label' })
-        req.textContent = ' (required)'
-      }
-      const fKey = f.key
-      const input = group.createEl('input', {
-        type: 'password',
-        value: this.setupKeys[fKey],
-        placeholder: f.placeholder,
-        cls: 'openclaw-onboard-input',
-      })
-      input.addEventListener('input', () => {
-        this.setupKeys[fKey] = input.value.trim()
-      })
-      const help = group.createDiv('openclaw-onboard-hint')
-      this.setRichText(help, f.help)
-    }
-
-    const note = el.createDiv('openclaw-onboard-info')
-    note.setText(
-      '🔒 Keys stay on your device. The install command runs entirely on your server.'
-    )
-
-    this.statusEl = el.createDiv('openclaw-onboard-status')
-
-    const btnRow = el.createDiv('openclaw-onboard-buttons')
-    btnRow
-      .createEl('button', { text: '← back' })
-      .addEventListener('click', () => {
-        this.step = 0
-        this.path = null
-        this.renderStep()
-      })
-    const nextBtn = btnRow.createEl('button', {
-      text: 'Next →',
+    const btnRow = this.contentEl.createDiv('openclaw-onboard-buttons')
+    btnRow.createEl('button', {
+      text: 'Got it',
       cls: 'mod-cta',
-    })
-    nextBtn.addEventListener('click', () => {
-      if (!this.setupKeys.claude1) {
-        this.showStatus('Claude token is required', 'error')
-        return
-      }
-      this.step = 2
-      this.renderStep()
-    })
-  }
-
-  // ─── Fresh path: Step 2 — Bot config ─────────────────────────────
-
-  private renderBots(el: HTMLElement): void {
-    el.createEl('h2', { text: 'Configure your bots' })
-    el.createEl('p', {
-      text: 'Each bot gets its own personality, memory, and workspace folder.',
-      cls: 'openclaw-onboard-desc',
-    })
-
-    const listEl = el.createDiv()
-    this.setupBots.forEach((bot, i) => {
-      const card = listEl.createDiv('openclaw-onboard-bot-card')
-      const row = card.createDiv('openclaw-onboard-bot-row')
-      const nameInput = row.createEl('input', {
-        type: 'text',
-        value: bot.name,
-        placeholder: 'Bot name',
-        cls: 'openclaw-onboard-input oc-name-input',
-      })
-      nameInput.addEventListener('input', () => {
-        bot.name = nameInput.value
-      })
-
-      const select = row.createEl('select', {
-        cls: 'openclaw-onboard-input oc-select-inline',
-      })
-      for (const m of OnboardingModal.MODELS) {
-        const opt = select.createEl('option', { text: m.label, value: m.id })
-        if (m.id === bot.model) opt.selected = true
-      }
-      select.addEventListener('change', () => {
-        bot.model = select.value
-      })
-
-      if (this.setupBots.length > 1) {
-        const removeBtn = row.createSpan({ text: '×', cls: 'oc-remove-btn' })
-        removeBtn.addEventListener('click', () => {
-          this.setupBots.splice(i, 1)
-          this.renderStep()
-        })
-      }
-    })
-
-    const addBtn = el.createEl('button', {
-      text: '+ add another bot',
-      cls: 'oc-add-bot-btn',
-    })
-    addBtn.addEventListener('click', () => {
-      this.setupBots.push({ name: '', model: 'anthropic/claude-sonnet-4-6' })
-      this.renderStep()
-    })
-
-    const note = el.createDiv('openclaw-onboard-hint oc-margin-top')
-    note.createSpan({ text: 'Each bot gets a folder like ' })
-    note.createEl('code', { text: 'AGENT-YOURBOT/' })
-    note.createSpan({ text: ' in your vault.' })
-
-    this.statusEl = el.createDiv('openclaw-onboard-status')
-
-    const btnRow = el.createDiv('openclaw-onboard-buttons')
-    btnRow
-      .createEl('button', { text: '← back' })
-      .addEventListener('click', () => {
-        this.step = 1
-        this.renderStep()
-      })
-    const nextBtn = btnRow.createEl('button', {
-      text: 'Generate install command →',
-      cls: 'mod-cta',
-    })
-    nextBtn.addEventListener('click', () => {
-      this.step = 3
-      this.renderStep()
-    })
-  }
-
-  // ─── Fresh path: Step 3 — Install command ────────────────────────
-
-  private renderInstallCmd(el: HTMLElement): void {
-    el.createEl('h2', { text: 'Install OpenClaw' })
-    el.createEl('p', {
-      text: 'Open a terminal on your server (Mac: Cmd+Space → Terminal, cloud: ssh in). Run this command:',
-      cls: 'openclaw-onboard-desc',
-    })
-
-    const config = this.generateConfig()
-    const configJson = JSON.stringify(config, null, 2)
-    const configB64 = btoa(
-      Array.from(new TextEncoder().encode(configJson), (b) =>
-        String.fromCharCode(b)
-      ).join('')
-    )
-    const installCmd = `curl -fsSL https://openclaw.ai/install.sh | bash && echo '${configB64}' | base64 -d > ~/.openclaw/openclaw.json && openclaw gateway restart`
-
-    this.makeCopyBox(el, installCmd)
-
-    el.createEl('p', {
-      text: 'This installs OpenClaw, writes your config with all API keys and bot settings, and starts the gateway.',
-      cls: 'openclaw-onboard-hint',
-    })
-
-    // Expandable config preview
-    const details = el.createEl('details', { cls: 'oc-margin-top' })
-    details.createEl('summary', {
-      text: 'Preview config',
-      cls: 'oc-details-summary',
-    })
-    const pre = details.createEl('pre', { cls: 'oc-install-pre' })
-    pre.textContent = JSON.stringify(config, null, 2)
-
-    el.createEl('p', {
-      text: 'The gateway will be available locally at ws://127.0.0.1:18789.',
-      cls: 'openclaw-onboard-hint',
-    })
-
-    this.statusEl = el.createDiv('openclaw-onboard-status')
-
-    const btnRow = el.createDiv('openclaw-onboard-buttons')
-    btnRow
-      .createEl('button', { text: '← back' })
-      .addEventListener('click', () => {
-        this.step = 2
-        this.renderStep()
-      })
-    const nextBtn = btnRow.createEl('button', {
-      text: 'OpenClaw is running →',
-      cls: 'mod-cta',
-    })
-    nextBtn.addEventListener('click', () => {
-      this.step = 4
-      this.renderStep()
-    })
-  }
-
-  private generateConfig(): Record<string, unknown> {
-    const auth: Record<string, unknown> = {
-      profiles: {} as Record<string, unknown>,
-    }
-    const agents: Record<string, unknown> = {
-      defaults: {
-        model: {
-          primary: this.setupBots[0]?.model || 'anthropic/claude-sonnet-4-6',
-        },
-      },
-    }
-    const config: Record<string, unknown> = {
-      auth,
-      agents,
-      gateway: {
-        port: 18789,
-        bind: 'loopback',
-        auth: { mode: 'token' },
-      },
-    }
-    const profiles = auth.profiles as Record<string, unknown>
-    if (this.setupKeys.claude1)
-      profiles['anthropic:default'] = { provider: 'anthropic', mode: 'token' }
-    if (this.setupKeys.claude2)
-      profiles['anthropic:secondary'] = {
-        provider: 'anthropic',
-        mode: 'token',
-      }
-    if (this.setupKeys.googleai)
-      profiles['google:default'] = { provider: 'google', mode: 'api_key' }
-    if (this.setupKeys.brave)
-      config.tools = { web: { search: { apiKey: this.setupKeys.brave } } }
-    if (this.setupKeys.elevenlabs)
-      config.messages = {
-        tts: {
-          provider: 'elevenlabs',
-          elevenlabs: { apiKey: this.setupKeys.elevenlabs },
-        },
-      }
-    if (this.setupBots.length > 1) {
-      agents.list = this.setupBots.map((bot, i) => {
-        const id =
-          i === 0
-            ? 'main'
-            : bot.name.toLowerCase().replace(/[^a-z0-9]/g, '-') || `bot-${i}`
-        const folder =
-          'AGENT-' +
-          (bot.name || 'BOT').toUpperCase().replace(/[^A-Z0-9]/g, '-')
-        return {
-          id,
-          name: bot.name || `Bot ${i + 1}`,
-          workspace: `~/.openclaw/workspace/${folder}`,
-        }
-      })
-    } else if (this.setupBots[0]?.name) {
-      const folder =
-        'AGENT-' +
-        this.setupBots[0].name.toUpperCase().replace(/[^A-Z0-9]/g, '-')
-      ;(agents.defaults as Record<string, unknown>).workspace =
-        `~/.openclaw/workspace/${folder}`
-    }
-    return config
-  }
-
-  // ─── Step 3: Connect ─────────────────────────────────────────────
-
-  private renderConnect(el: HTMLElement): void {
-    el.createEl('h2', { text: 'Connect to your gateway' })
-    el.createEl('p', {
-      text: 'Paste the URL and token from the previous step.',
-      cls: 'openclaw-onboard-desc',
-    })
-
-    // URL input
-    const urlGroup = el.createDiv('openclaw-onboard-field')
-    urlGroup.createEl('label', { text: 'Gateway URL' })
-    const urlInput = urlGroup.createEl('input', {
-      type: 'text',
-      value:
-        this.plugin.settings.gatewayUrl ||
-        (this.path === 'existing' ? 'ws://127.0.0.1:18789' : ''),
-      placeholder: 'ws://127.0.0.1:18789',
-      cls: 'openclaw-onboard-input',
-    })
-    const urlHint = urlGroup.createDiv('openclaw-onboard-hint')
-    urlHint.appendText('Usually ')
-    urlHint.createEl('code', { text: 'ws://127.0.0.1:18789' })
-    urlHint.appendText(' unless you changed the port. You can paste ')
-    urlHint.createEl('code', { text: 'https://' })
-    urlHint.appendText(' or ')
-    urlHint.createEl('code', { text: 'wss://' })
-    urlHint.appendText(' — both work.')
-
-    // Token input
-    const tokenGroup = el.createDiv('openclaw-onboard-field')
-    tokenGroup.createEl('label', { text: 'Auth token' })
-    const tokenInput = tokenGroup.createEl('input', {
-      type: 'password',
-      value: this.plugin.settings.token || '',
-      placeholder: 'Paste your gateway auth token',
-      cls: 'openclaw-onboard-input',
-    })
-
-    this.statusEl = el.createDiv('openclaw-onboard-status')
-
-    // Troubleshooting (hidden until failure)
-    const troubleshoot = el.createDiv('openclaw-onboard-troubleshoot')
-    troubleshoot.addClass('oc-hidden')
-    troubleshoot.createEl('h3', { text: 'Troubleshooting' })
-
-    const checks = troubleshoot.createEl('ol', {
-      cls: 'openclaw-onboard-list',
-    })
-
-    const li1 = checks.createEl('li')
-    li1.setText('Is the gateway running? On the gateway machine, run:')
-    this.makeCopyBox(
-      troubleshoot,
-      'openclaw doctor --fix && openclaw gateway restart'
-    )
-
-    const li2 = checks.createEl('li')
-    li2.setText('Is it listening on localhost? Run:')
-    this.makeCopyBox(troubleshoot, 'curl -fsSL http://127.0.0.1:18789/health')
-    const healthHint = troubleshoot.createDiv('openclaw-onboard-hint')
-    healthHint.setText(
-      "You should see JSON output. If you get 'Connection refused', the gateway isn't started."
-    )
-
-    const li3 = checks.createEl('li')
-    li3.createEl('strong', { text: 'Port conflict?' })
-    li3.appendText(' Check if another process is using port 18789:')
-    this.makeCopyBox(troubleshoot, 'lsof -i :18789')
-
-    const li4 = checks.createEl('li')
-    li4.createEl('strong', { text: 'Gateway config broken?' })
-    li4.appendText(' If ')
-    li4.createEl('code', { text: 'openclaw doctor' })
-    li4.appendText(
-      ' shows "Invalid config" errors, reset the bind address and restart:'
-    )
-    this.makeCopyBox(
-      troubleshoot,
-      'openclaw config set gateway.bind loopback && openclaw gateway restart'
-    )
-
-    const li5 = checks.createEl('li')
-    li5.createEl('strong', { text: 'Still stuck?' })
-    li5.appendText(
-      ' Try rebooting the gateway machine. Localhost bindings survive most restarts cleanly.'
-    )
-
-    const btnRow = el.createDiv('openclaw-onboard-buttons')
-    btnRow
-      .createEl('button', { text: '← back' })
-      .addEventListener('click', () => {
-        if (this.path === 'existing') {
-          this.step = 0
-          this.path = null
-        } else {
-          this.step = this.step - 1
-        }
-        this.renderStep()
-      })
-
-    const testBtn = btnRow.createEl('button', {
-      text: 'Test connection',
-      cls: 'mod-cta',
-    })
-    testBtn.addEventListener(
-      'click',
-      () =>
-        void (async () => {
-          const url = urlInput.value.trim()
-          const token = tokenInput.value.trim()
-
-          if (!url) {
-            this.showStatus(
-              'Paste your gateway URL from the previous step',
-              'error'
-            )
-            return
-          }
-          const normalizedUrl = normalizeGatewayUrl(url)
-          if (!normalizedUrl) {
-            this.showStatus(
-              'Expected something like ws://127.0.0.1:18789',
-              'error'
-            )
-            return
-          }
-          if (!token) {
-            this.showStatus('Paste your auth token', 'error')
-            return
-          }
-
-          testBtn.disabled = true
-          testBtn.textContent = 'Connecting...'
-          troubleshoot.addClass('oc-hidden')
-          this.showStatus('Testing connection...', 'info')
-
-          // Always reset to "main" session to ensure clean connection
-          urlInput.value = normalizedUrl
-          this.plugin.settings.gatewayUrl = normalizedUrl
-          this.plugin.settings.token = token
-          this.plugin.settings.sessionKey = 'main'
-          await this.plugin.saveSettings()
-
-          const ok = await new Promise<boolean>((resolve) => {
-            const timeout = window.setTimeout(() => {
-              tc.stop()
-              resolve(false)
-            }, 8000)
-            const tc = new GatewayClient({
-              url: normalizedUrl,
-              token,
-              onHello: () => {
-                window.clearTimeout(timeout)
-                tc.stop()
-                resolve(true)
-              },
-              onClose: () => {},
-            })
-            tc.start()
-          })
-
-          testBtn.disabled = false
-          testBtn.textContent = 'Test connection'
-
-          if (ok) {
-            this.showStatus('✓ Connected!', 'success')
-            window.setTimeout(() => {
-              this.step = this.step + 1
-              this.renderStep()
-            }, 800)
-          } else {
-            this.showStatus(
-              'Could not connect. Check the troubleshooting steps below.',
-              'error'
-            )
-            troubleshoot.removeClass('oc-hidden')
-          }
-        })()
-    )
-  }
-
-  private makeCopyBox(parent: HTMLElement, command: string): HTMLElement {
-    const box = parent.createDiv('openclaw-copy-box')
-    box.createEl('code', { text: command })
-    const btn = box.createSpan('openclaw-copy-btn')
-    btn.textContent = 'Copy'
-    box.addEventListener('click', () => {
-      void navigator.clipboard.writeText(command).then(() => {
-        btn.textContent = '✓'
-        window.setTimeout(() => (btn.textContent = 'Copy'), 1500)
-      })
-    })
-    return box
-  }
-
-  // ─── Step 4: Device Pairing ──────────────────────────────────────
-
-  private renderPairing(el: HTMLElement): void {
-    el.createEl('h2', { text: 'Pair this device' })
-    el.createEl('p', {
-      text: "For security, each device needs one-time approval from the gateway. This creates a unique keypair for this device so the gateway knows it's you.",
-      cls: 'openclaw-onboard-desc',
-    })
-
-    const hasKeys =
-      this.plugin.settings.deviceId && this.plugin.settings.devicePublicKey
-
-    if (hasKeys) {
-      const info = el.createDiv('openclaw-onboard-info')
-      info.createEl('p', { text: 'This device already has a keypair.' })
-      const deviceP = info.createEl('p')
-      deviceP.appendText('Device ID: ')
-      deviceP.createEl('code', {
-        text: (this.plugin.settings.deviceId?.slice(0, 12) ?? '') + '...',
-      })
-    }
-
-    this.statusEl = el.createDiv('openclaw-onboard-status')
-
-    // Approval instructions (always visible)
-    const approvalInfo = el.createDiv('openclaw-onboard-numbered')
-
-    const opt1 = approvalInfo.createDiv('openclaw-onboard-numbered-item')
-    opt1.createEl('p', {
-      text: 'Option 1 — Run on the server:',
-      cls: 'openclaw-onboard-hint',
-    })
-    this.makeCopyBox(opt1, 'openclaw devices approve --latest')
-
-    const opt2 = approvalInfo.createDiv('openclaw-onboard-numbered-item')
-    opt2.createEl('p', {
-      text: 'Option 2 — Ask your bot:',
-      cls: 'openclaw-onboard-hint',
-    })
-    opt2.createEl('p', {
-      text: 'If you already have a channel connected (Telegram, Discord, etc.), just tell your bot: "approve the pending device"',
-      cls: 'openclaw-onboard-hint',
-    })
-
-    const afterApproval = approvalInfo.createDiv(
-      'openclaw-onboard-numbered-item'
-    )
-    afterApproval.createEl('p', {
-      text: 'After approval:',
-      cls: 'openclaw-onboard-hint',
-    })
-    afterApproval.createEl('p', {
-      text: 'Come back here and click “Check pairing status”. If it still says disconnected, close and reopen Obsidian once.',
-      cls: 'openclaw-onboard-hint',
-    })
-
-    const btnRow = el.createDiv('openclaw-onboard-buttons')
-    btnRow
-      .createEl('button', { text: '← back' })
-      .addEventListener('click', () => {
-        this.step = this.step - 1
-        this.renderStep()
-      })
-
-    const pairBtn = btnRow.createEl('button', {
-      text: hasKeys ? 'Check pairing status' : 'Send pairing request',
-      cls: 'mod-cta',
-    })
-    pairBtn.addEventListener(
-      'click',
-      () =>
-        void (async () => {
-          pairBtn.disabled = true
-          this.showStatus('Connecting to gateway...', 'info')
-
-          try {
-            // Ensure we have a real connection to test pairing
-            await this.plugin.connectGateway()
-
-            // Wait a moment for connection to establish
-            await new Promise((r) => window.setTimeout(r, 2000))
-
-            if (!this.plugin.gatewayConnected) {
-              const lastError =
-                this.plugin.lastGatewayConnectError.toLowerCase()
-              if (
-                lastError.includes('pair') ||
-                lastError.includes('device') ||
-                lastError.includes('approval') ||
-                lastError.includes('scope') ||
-                lastError.includes('auth')
-              ) {
-                this.showStatus(
-                  '⏳ Pairing request sent. Approve it on the gateway, then click “Check pairing status”.\n\nIf you already approved it, wait a few seconds and click again.',
-                  'info'
-                )
-                pairBtn.textContent = 'Check pairing status'
-              } else {
-                this.showStatus(
-                  'Could not reach the gateway. Check the gateway URL, token, and that the gateway is running (`openclaw status`).',
-                  'error'
-                )
-              }
-              pairBtn.disabled = false
-              return
-            }
-
-            // Try a simple request to verify pairing
-            try {
-              const result = (await this.plugin.gateway!.request(
-                'sessions.list',
-                {}
-              )) as { sessions?: unknown[] } | null
-              if (result?.sessions) {
-                this.showStatus('✓ Device is paired and authorized!', 'success')
-                window.setTimeout(() => {
-                  this.step = this.step + 1
-                  this.renderStep()
-                }, 1000)
-                return
-              }
-            } catch (e: unknown) {
-              // If we get an auth error, device needs approval
-              const msg = String(e)
-              if (
-                msg.includes('scope') ||
-                msg.includes('auth') ||
-                msg.includes('pair')
-              ) {
-                this.showStatus(
-                  '⏳ Pairing request sent! Now approve it on your gateway machine using the commands above.\n\nWaiting for approval...',
-                  'info'
-                )
-                this.startPairingPoll(pairBtn)
-                return
-              }
-            }
-
-            // If we got here, connection works — might already be paired
-            this.showStatus('✓ Connection working! Proceeding...', 'success')
-            window.setTimeout(() => {
-              this.step = this.step + 1
-              this.renderStep()
-            }, 1000)
-          } catch (e) {
-            this.showStatus(`Error: ${e}`, 'error')
-            pairBtn.disabled = false
-          }
-        })()
-    )
-
-    const skipBtn = btnRow.createEl('button', { text: 'Skip for now' })
-    skipBtn.addEventListener('click', () => {
-      this.step = this.step + 1
-      this.renderStep()
-    })
-  }
-
-  private startPairingPoll(btn: HTMLButtonElement): void {
-    let attempts = 0
-    this.pairingPollTimer = window.setInterval(
-      () =>
-        void (async () => {
-          attempts++
-          if (attempts > 60) {
-            // 2 minutes
-            if (this.pairingPollTimer)
-              window.clearInterval(this.pairingPollTimer)
-            this.showStatus(
-              'Timed out waiting for approval. You can approve later and re-run the setup wizard from settings.',
-              'error'
-            )
-            btn.disabled = false
-            return
-          }
-          try {
-            const result = (await this.plugin.gateway?.request(
-              'sessions.list',
-              {}
-            )) as { sessions?: unknown[] } | null
-            if (result?.sessions) {
-              if (this.pairingPollTimer)
-                window.clearInterval(this.pairingPollTimer)
-              this.showStatus('✓ Device approved!', 'success')
-              window.setTimeout(() => {
-                this.step = this.step + 1
-                this.renderStep()
-              }, 1000)
-            }
-          } catch {
-            /* still waiting */
-          }
-        })(),
-      2000
-    )
-  }
-
-  // ─── Step 5: Done ────────────────────────────────────────────────
-
-  private renderDone(el: HTMLElement): void {
-    el.createEl('h2', { text: "You're all set! 🎉" })
-    el.createEl('p', {
-      text: "OcO is connected and ready. Your vault is now the agent's workspace.",
-      cls: 'openclaw-onboard-desc',
-    })
-
-    const tips = el.createDiv('openclaw-onboard-tips')
-    tips.createEl('h3', { text: 'What you can do' })
-    const list = tips.createEl('ul', { cls: 'openclaw-onboard-list' })
-    list.createEl('li', { text: 'Chat with your AI agent in the sidebar' })
-    list.createEl('li', {
-      text: 'Use Cmd/Ctrl+P → "Ask about current note" to discuss any note',
-    })
-    list.createEl('li', {
-      text: 'The agent can read, create, and edit files in your vault',
-    })
-    list.createEl('li', {
-      text: 'Tool calls appear inline — click file paths to open them',
-    })
-
-    const syncTip = el.createDiv('openclaw-onboard-info')
-    syncTip.createEl('strong', { text: '💡 sync tip: ' })
-    syncTip.createSpan({
-      text: 'Enable Obsidian Sync to access your agent from multiple devices. Your chat settings and device keys sync automatically — set up once, works everywhere.',
-    })
-
-    const controlTip = el.createDiv('openclaw-onboard-info')
-    controlTip.createEl('strong', { text: '🖥️ control UI: ' })
-    const ctrlSpan = controlTip.createSpan()
-    ctrlSpan.setText(
-      'You can also manage your gateway from any browser on this machine. Just open http://127.0.0.1:18789 in a browser.'
-    )
-
-    const btnRow = el.createDiv('openclaw-onboard-buttons')
-    const doneBtn = btnRow.createEl('button', {
-      text: 'Start chatting →',
-      cls: 'mod-cta',
-    })
-    doneBtn.addEventListener(
-      'click',
-      () =>
-        void (async () => {
-          this.plugin.settings.onboardingComplete = true
-          // Always reset to "main" session to ensure clean connection
-          this.plugin.settings.sessionKey = 'main'
-          await this.plugin.saveSettings()
-          this.close()
-          // Force reconnect (picks up new URL/token) and sync the chat view
-          void this.plugin.connectGateway()
-          void this.plugin.activateView().then(() => {
-            this.plugin.chatView?.syncFromSettings()
-          })
-        })()
-    )
-  }
-
-  private showStatus(text: string, type: 'info' | 'success' | 'error'): void {
-    if (!this.statusEl) return
-    this.statusEl.empty()
-    this.statusEl.className = `openclaw-onboard-status openclaw-onboard-status-${type}`
-    // Support multiline with \n
-    for (const line of text.split('\n')) {
-      if (this.statusEl.childNodes.length > 0) this.statusEl.createEl('br')
-      this.statusEl.appendText(line)
-    }
+    }).addEventListener('click', () => this.close())
   }
 }
 
@@ -1705,7 +772,7 @@ class OpenClawChatView extends ItemView {
       this.toggleControlPanel()
     })
 
-    // Hamburger bar (mobile mode — hidden by default)
+    // Hamburger bar (mobile mode - hidden by default)
     this.hamburgerBarEl = topBar.createDiv('oc-hamburger-bar')
 
     // Mobile control panel button (left side)
@@ -1827,7 +894,7 @@ class OpenClawChatView extends ItemView {
     this.contextLabelEl = createSpan()
     this.modelLabelEl = createDiv()
 
-    // Status banner (compaction, etc.) — hidden by default
+    // Status banner (compaction, etc.) - hidden by default
     this.bannerEl = container.createDiv('openclaw-banner')
     this.bannerEl.addClass('oc-hidden')
 
@@ -2007,7 +1074,7 @@ class OpenClawChatView extends ItemView {
       if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
         void this.sendMessage()
       }
-      // Voice recording disabled — base64 in message text bloats context
+      // Voice recording disabled - base64 in message text bloats context
     })
     this.abortBtn.addEventListener('click', () => void this.abortMessage())
 
@@ -2016,8 +1083,8 @@ class OpenClawChatView extends ItemView {
     this.plugin.chatView = this
 
     // Mobile keyboard avoidance:
-    // 1. Capacitor Keyboard.setResizeMode('native') — makes webview shrink with keyboard
-    // 2. Hide Obsidian's bottom drawer elements when keyboard is open — they waste ~120px
+    // 1. Capacitor Keyboard.setResizeMode('native') - makes webview shrink with keyboard
+    // 2. Hide Obsidian's bottom drawer elements when keyboard is open - they waste ~120px
     try {
       type KeyboardResizeMode = 'none' | 'native' | 'body' | 'ionic'
       type KeyboardPlugin = {
@@ -2357,7 +1424,7 @@ class OpenClawChatView extends ItemView {
         agentList.push({ id: 'main' })
       }
 
-      // Build agent info from gateway data only — no file parsing
+      // Build agent info from gateway data only - no file parsing
       const agents: AgentInfo[] = []
       for (const a of agentList) {
         agents.push({
@@ -3412,7 +2479,7 @@ class OpenClawChatView extends ItemView {
 
     // Filter: only show user conversation sessions (suffix has no colons)
     // This excludes channel sessions (telegram:, discord:, webchat:, etc.),
-    // cron jobs, and sub-agents — all of which have colons in their suffix.
+    // cron jobs, and sub-agents - all of which have colons in their suffix.
     const agentPrefix = this.agentPrefix
     const convSessions = sessions.filter((s) => {
       if (!s.key.startsWith(agentPrefix)) return false
@@ -3420,7 +2487,7 @@ class OpenClawChatView extends ItemView {
       return !suffix.includes(':')
     })
 
-    // Build tab list — ensure "main" is always first
+    // Build tab list - ensure "main" is always first
     this.tabSessions = []
     const mainSession = convSessions.find(
       (s) => s.key === `${this.agentPrefix}main`
@@ -4191,7 +3258,7 @@ class OpenClawChatView extends ItemView {
         cls: 'openclaw-attach-remove',
       })
       removeBtn.addEventListener('click', () => {
-        // Splice the actual object — `chipped` is a filtered view, so its index
+        // Splice the actual object - `chipped` is a filtered view, so its index
         // doesn't line up with the backing array.
         const at = this.pendingAttachments.indexOf(att)
         if (at >= 0) this.pendingAttachments.splice(at, 1)
@@ -4208,7 +3275,7 @@ class OpenClawChatView extends ItemView {
     switch (toolName) {
       case 'exec': {
         const cmd = str(a?.command)
-        const short = cmd.length > 60 ? cmd.slice(0, 60) + '…' : cmd
+        const short = cmd.length > 60 ? cmd.slice(0, 60) + '...' : cmd
         return { label: `🔧 ${short || 'Running command'}` }
       }
       case 'read':
@@ -4232,7 +3299,7 @@ class OpenClawChatView extends ItemView {
       case 'web_search': {
         const q = str(a?.query)
         return {
-          label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + '…' : q}"`,
+          label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + '...' : q}"`,
         }
       }
       case 'web_fetch': {
@@ -4251,7 +3318,7 @@ class OpenClawChatView extends ItemView {
       case 'memory_search': {
         const q = str(a?.query)
         return {
-          label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + '…' : q}"`,
+          label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + '...' : q}"`,
         }
       }
       case 'memory_get': {
@@ -4707,7 +3774,7 @@ class OpenClawChatView extends ItemView {
 
   /** Build HTTP URL for a voice file served by the gateway */
   private buildVoiceUrl(voicePath: string): string {
-    // Gateway URL is ws:// or wss:// — convert to http:// or https://
+    // Gateway URL is ws:// or wss:// - convert to http:// or https://
     const gwUrl = this.plugin.settings.gatewayUrl || ''
     const httpUrl = gwUrl.replace(/^ws(s?):\/\//, 'http$1://')
     return `${httpUrl}/${voicePath}`
@@ -4827,7 +3894,7 @@ class OpenClawChatView extends ItemView {
     }
     this.streamEl.empty()
     this.streamEl.createDiv({ text: visibleText, cls: 'openclaw-msg-text' })
-    // Don't auto-scroll during text streaming — let user read from the top
+    // Don't auto-scroll during text streaming - let user read from the top
   }
 
   async renderMessages(): Promise<void> {
@@ -4866,7 +3933,7 @@ class OpenClawChatView extends ItemView {
                   this.renderAudioPlayer(bubble, ap)
                 }
               } else if (blockAudio.length > 0) {
-                // No visible text but has audio — create a bubble just for the player
+                // No visible text but has audio - create a bubble just for the player
                 const bubble = this.messagesEl.createDiv(
                   'openclaw-msg openclaw-msg-assistant'
                 )
@@ -4995,7 +4062,7 @@ export default class OpenClawPlugin extends Plugin {
   lastGatewayConnectError = ''
   chatView: OpenClawChatView | null = null
   // Consecutive close events with no successful hello in between.
-  // After a few in a row, we surface the patch hint — a likely sign the
+  // After a few in a row, we surface the patch hint - a likely sign the
   // gateway is rejecting our origin during the websocket handshake.
   private handshakeFailuresInARow = 0
   private patchHintShownThisSession = false
@@ -5029,21 +4096,13 @@ export default class OpenClawPlugin extends Plugin {
       callback: () => void this.connectGateway(),
     })
 
-    this.addCommand({
-      id: 'setup',
-      name: 'Run setup wizard',
-      callback: () => new OnboardingModal(this.app, this).open(),
-    })
-
     this.addSettingTab(new OpenClawSettingTab(this.app, this))
 
-    // Show onboarding on first run, otherwise auto-connect and open chat
-    if (!this.settings.onboardingComplete) {
-      // Small delay so Obsidian finishes loading
-      window.setTimeout(() => new OnboardingModal(this.app, this).open(), 500)
+    // Show welcome on first run, otherwise auto-connect and open chat
+    if (!this.settings.gatewayUrl) {
+      window.setTimeout(() => new WelcomeModal(this.app).open(), 500)
     } else {
       void this.connectGateway()
-      // Auto-open chat sidebar after workspace is ready
       this.app.workspace.onLayoutReady(() => {
         void this.activateView()
       })
@@ -5149,7 +4208,7 @@ export default class OpenClawPlugin extends Plugin {
         }
         // Track handshake-only failures (closed without ever reaching onHello).
         // 3+ in a row with no descriptive reason is a strong hint the gateway
-        // rejected our origin at the websocket upgrade — show the patch tip once.
+        // rejected our origin at the websocket upgrade - show the patch tip once.
         if (!wasConnected) {
           this.handshakeFailuresInARow += 1
           const lacksReason = !info.reason || info.reason.trim() === ''
@@ -5160,7 +4219,7 @@ export default class OpenClawPlugin extends Plugin {
           ) {
             this.patchHintShownThisSession = true
             new Notice(
-              'OcO: handshake keeps failing. If your gateway is reachable, you may need to (re-)apply the origin patch. Open Settings → OcO → Run setup wizard for the command.',
+              'OcO: handshake keeps failing. Apply the origin patch (see README) or check Settings → OcO → Connection.',
               12000
             )
           }
@@ -5631,20 +4690,11 @@ class OpenClawSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName('Chat').setHeading()
 
-    // ─── Setup Wizard (top, most prominent) ───────────────────────
-    const wizardSection = containerEl.createDiv('openclaw-settings-wizard')
-    const wizardDesc = wizardSection.createDiv('openclaw-settings-wizard-desc')
-    wizardDesc.createEl('strong', { text: 'Setup wizard' })
-    wizardDesc.createEl('p', {
-      text: 'The easiest way to connect. Walks you through gateway setup and device pairing step by step.',
+    // ─── Connection hint ───────────────────────────────────────────
+    const hintSection = containerEl.createDiv('openclaw-settings-wizard')
+    hintSection.createEl('p', {
+      text: 'Set your gateway URL and token below, then click Reconnect.',
       cls: 'setting-item-description',
-    })
-    const wizardBtn = wizardSection.createEl('button', {
-      text: 'Run setup wizard',
-      cls: 'mod-cta openclaw-settings-wizard-btn',
-    })
-    wizardBtn.addEventListener('click', () => {
-      new OnboardingModal(this.app, this.plugin).open()
     })
 
     // ─── Status ──────────────────────────────────────────────────
@@ -5659,7 +4709,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     })
     if (this.plugin.settings.gatewayUrl) {
       statusSection.createSpan({
-        text: ` — ${this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, '')}`,
+        text: ` - ${this.plugin.settings.gatewayUrl.replace(/^wss?:\/\//, '')}`,
         cls: 'openclaw-settings-status-url',
       })
     }
@@ -5705,9 +4755,7 @@ class OpenClawSettingTab extends PluginSettingTab {
     // ─── Connection (Advanced) ────────────────────────────────────
     new Setting(containerEl)
       .setName('Connection')
-      .setDesc(
-        "These are set automatically by the setup wizard. Edit manually only if you know what you're doing."
-      )
+      .setDesc("Edit manually if you know what you're doing.")
       .setHeading()
 
     new Setting(containerEl)
