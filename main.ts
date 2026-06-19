@@ -1389,72 +1389,39 @@ class OnboardingModal extends Modal {
     });
 
     const li1 = checks.createEl("li");
-    li1.createEl("strong", { text: "Is Tailscale connected on this device?" });
-    li1.appendText(
-      " Check the Tailscale icon in your system tray / menu bar. If it's off, turn it on.",
-    );
-
-    const li2 = checks.createEl("li");
-    li2.createEl("strong", {
-      text: "DNS not resolving? (most common on macOS)",
-    });
-    li2.appendText(" Open the ");
-    li2.createEl("strong", { text: "Tailscale app" });
-    li2.appendText(" from your menu bar, toggle it ");
-    li2.createEl("strong", { text: "OFF" });
-    li2.appendText(", wait 5 seconds, toggle it ");
-    li2.createEl("strong", { text: "ON" });
-    li2.appendText(
-      ". This resets MagicDNS, which macOS sometimes loses track of.",
-    );
-
-    const li3 = checks.createEl("li");
-    li3.setText("Is the gateway running? On the gateway machine, run:");
+    li1.setText("Is the gateway running? On the gateway machine, run:");
     this.makeCopyBox(
       troubleshoot,
       "openclaw doctor --fix && openclaw gateway restart",
     );
 
+    const li2 = checks.createEl("li");
+    li2.setText("Is it listening on localhost? Run:");
+    this.makeCopyBox(troubleshoot, "curl -fsSL http://127.0.0.1:18789/health");
+    const healthHint = troubleshoot.createDiv("openclaw-onboard-hint");
+    healthHint.setText("You should see JSON output. If you get 'Connection refused', the gateway isn't started.");
+
+    const li3 = checks.createEl("li");
+    li3.createEl("strong", { text: "Port conflict?" });
+    li3.appendText(" Check if another process is using port 18789:");
+    this.makeCopyBox(troubleshoot, "lsof -i :18789");
+
     const li4 = checks.createEl("li");
-    li4.setText("Is Tailscale Serve active? On the gateway machine, run:");
-    this.makeCopyBox(troubleshoot, "tailscale serve status");
-    const tsHint = troubleshoot.createDiv("openclaw-onboard-hint");
-    tsHint.setText("If Tailscale Serve shows nothing, set it up:");
+    li4.createEl("strong", { text: "Gateway config broken?" });
+    li4.appendText(" If ");
+    li4.createEl("code", { text: "openclaw doctor" });
+    li4.appendText(
+      ' shows "Invalid config" errors, reset the bind address and restart:'
+    );
     this.makeCopyBox(
       troubleshoot,
-      "tailscale serve --bg http://127.0.0.1:18789",
+      "openclaw config set gateway.bind loopback && openclaw gateway restart",
     );
 
     const li5 = checks.createEl("li");
-    li5.createEl("strong", { text: "Gateway config broken?" });
-    li5.appendText(" If ");
-    li5.createEl("code", { text: "openclaw doctor" });
+    li5.createEl("strong", { text: "Still stuck?" });
     li5.appendText(
-      ' shows "Invalid config" errors, your gateway config file may have been corrupted. To reset to the recommended setup, run these on the gateway machine:',
-    );
-    this.makeCopyBox(
-      troubleshoot,
-      `cat ~/.openclaw/openclaw.json | python3 -c "
-import json, sys
-c = json.load(sys.stdin)
-c.setdefault('gateway', {})['bind'] = 'loopback'
-c['gateway'].setdefault('tailscale', {})['mode'] = 'serve'
-c['gateway']['tailscale']['resetOnExit'] = False
-json.dump(c, open(sys.argv[1], 'w'), indent=2)
-print('Config fixed: bind=loopback, tailscale.mode=serve')
-" ~/.openclaw/openclaw.json`,
-    );
-    const li5hint = troubleshoot.createDiv("openclaw-onboard-hint");
-    li5hint.setText("Then restart the gateway and re-enable Tailscale Serve:");
-    this.makeCopyBox(
-      troubleshoot,
-      "openclaw gateway restart && tailscale serve --bg http://127.0.0.1:18789",
-    );
-
-    const li6 = checks.createEl("li");
-    li6.createEl("strong", { text: "Still stuck?" });
-    li6.appendText(
-      " Try restarting the Tailscale app entirely, or reboot this device. macOS DNS can get stuck and needs a fresh start.",
+      " Try rebooting the gateway machine. Localhost bindings survive most restarts cleanly."
     );
 
     const btnRow = el.createDiv("openclaw-onboard-buttons");
