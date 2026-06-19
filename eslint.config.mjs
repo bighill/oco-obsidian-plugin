@@ -4,11 +4,11 @@ import tsparser from "@typescript-eslint/parser";
 
 export default [
   {
-    ignores: ["main.js", "esbuild.config.mjs", "eslint.config.mjs"],
+    ignores: ["main.js", "esbuild.config.mjs", "eslint.config.mjs", "*.json", "*.mjs", "src/**/*.test.ts"],
   },
   ...obsidian.configs.recommended,
   {
-    files: ["main.ts"],
+    files: ["src/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
