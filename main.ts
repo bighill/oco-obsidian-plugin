@@ -1338,119 +1338,6 @@ class OnboardingModal extends Modal {
     return config;
   }
 
-  // ─── Existing path: Step 1 — Network (Tailscale) ─────────────────
-
-  private renderNetwork(el: HTMLElement): void {
-    el.createEl("h2", { text: "Set up your private network" });
-    el.createEl("p", {
-      text: "Tailscale creates an encrypted private network between your devices. No ports to open, no VPN to configure.",
-      cls: "openclaw-onboard-desc",
-    });
-
-    el.createEl("h3", { text: "Install Tailscale on both devices" });
-
-    const steps = el.createEl("ol", { cls: "openclaw-onboard-list" });
-    const s1 = steps.createEl("li");
-    s1.appendText("Install on your ");
-    s1.createEl("strong", { text: "gateway machine" });
-    s1.appendText(": ");
-    s1.createEl("a", {
-      text: "tailscale.com/download",
-      href: "https://tailscale.com/download",
-    });
-    const s2 = steps.createEl("li");
-    s2.appendText("Install on ");
-    s2.createEl("strong", { text: "this device" });
-    s2.appendText(": ");
-    s2.createEl("a", {
-      text: "tailscale.com/download",
-      href: "https://tailscale.com/download",
-    });
-    steps.createEl("li", {
-      text: "Sign in to the same Tailscale account on both.",
-    });
-
-    el.createEl("p", {
-      text: "Verify by running this on the gateway:",
-      cls: "openclaw-onboard-hint",
-    });
-    this.makeCopyBox(el, "tailscale status");
-
-    this.statusEl = el.createDiv("openclaw-onboard-status");
-
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        this.step = 0;
-        this.path = null;
-        this.renderStep();
-      });
-    const nextBtn = btnRow.createEl("button", {
-      text: "Both on Tailscale →",
-      cls: "mod-cta",
-    });
-    nextBtn.addEventListener("click", () => {
-      this.step = 2;
-      this.renderStep();
-    });
-  }
-
-  // ─── Existing path: Step 2 — Gateway (Tailscale Serve) ───────────
-
-  private renderGateway(el: HTMLElement): void {
-    el.createEl("h2", { text: "Expose your gateway" });
-    el.createEl("p", {
-      text: "Tailscale Serve gives your gateway a private HTTPS address. Run on the gateway machine:",
-      cls: "openclaw-onboard-desc",
-    });
-
-    el.createEl("strong", { text: "1. Configure OpenClaw" });
-    this.makeCopyBox(
-      el,
-      "openclaw config set gateway.bind loopback\nopenclaw config set gateway.tailscale.mode serve\nopenclaw gateway restart",
-    );
-
-    el.createEl("strong", { text: "2. Start Tailscale serve" });
-    this.makeCopyBox(el, "tailscale serve --bg http://127.0.0.1:18789");
-
-    el.createEl("strong", { text: "3. Get your URL and token" });
-    this.makeCopyBox(el, "tailscale serve status");
-    this.makeCopyBox(el, "cat ~/.openclaw/openclaw.json | grep token");
-
-    const hint = el.createDiv("openclaw-onboard-hint");
-    hint.appendText("Copy the ");
-    hint.createEl("code", { text: "https://your-machine.tailXXXX.ts.net" });
-    hint.appendText(" URL and the auth token for the next step.");
-
-    const trouble = el.createDiv("openclaw-onboard-info");
-    trouble.appendText("💡 ");
-    trouble.createEl("strong", { text: "Not working?" });
-    trouble.appendText(" Run: ");
-    this.makeCopyBox(
-      trouble,
-      "openclaw doctor --fix && openclaw gateway restart",
-    );
-
-    this.statusEl = el.createDiv("openclaw-onboard-status");
-
-    const btnRow = el.createDiv("openclaw-onboard-buttons");
-    btnRow
-      .createEl("button", { text: "← back" })
-      .addEventListener("click", () => {
-        this.step = 1;
-        this.renderStep();
-      });
-    const nextBtn = btnRow.createEl("button", {
-      text: "I have the URL and token →",
-      cls: "mod-cta",
-    });
-    nextBtn.addEventListener("click", () => {
-      this.step = 3;
-      this.renderStep();
-    });
-  }
-
   // ─── Step 3: Connect ─────────────────────────────────────────────
 
   private renderConnect(el: HTMLElement): void {
@@ -1465,14 +1352,16 @@ class OnboardingModal extends Modal {
     urlGroup.createEl("label", { text: "Gateway URL" });
     const urlInput = urlGroup.createEl("input", {
       type: "text",
-      value: this.plugin.settings.gatewayUrl || "",
-      placeholder: "https://your-machine.tail1234.ts.net",
+      value:
+        this.plugin.settings.gatewayUrl ||
+        (this.path === "existing" ? "ws://127.0.0.1:18789" : ""),
+      placeholder: "ws://127.0.0.1:18789",
       cls: "openclaw-onboard-input",
     });
     const urlHint = urlGroup.createDiv("openclaw-onboard-hint");
-    urlHint.appendText("The URL from ");
-    urlHint.createEl("code", { text: "tailscale serve status" });
-    urlHint.appendText(". You can paste ");
+    urlHint.appendText("Usually ");
+    urlHint.createEl("code", { text: "ws://127.0.0.1:18789" });
+    urlHint.appendText(" unless you changed the port. You can paste ");
     urlHint.createEl("code", { text: "https://" });
     urlHint.appendText(" or ");
     urlHint.createEl("code", { text: "wss://" });
@@ -1602,7 +1491,7 @@ print('Config fixed: bind=loopback, tailscale.mode=serve')
           const normalizedUrl = normalizeGatewayUrl(url);
           if (!normalizedUrl) {
             this.showStatus(
-              "That doesn't look right. Paste the URL from `tailscale serve status` (e.g. https://your-machine.tail1234.ts.net)",
+              "Expected something like ws://127.0.0.1:18789",
               "error",
             );
             return;
