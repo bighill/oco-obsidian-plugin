@@ -3,7 +3,7 @@
   "name": "OcO",
   "version": "0.42.0",
   "minAppVersion": "1.0.0",
-  "description": "OcO — Chat with your OpenClaw AI agent in Obsidian. Your vault is the workspace.",
+  "description": "OcO — OpenClaw tab for Obsidian",
   "author": "bighill",
   "authorUrl": "https://github.com/bighill",
   "isDesktopOnly": false

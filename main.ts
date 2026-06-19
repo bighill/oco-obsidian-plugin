@@ -26,280 +26,24 @@ import {
   splitFileBlocks,
 } from "./at-mention";
 
+import {
+  createSvgIcon,
+  SVG_CHEVRON_LEFT,
+  SVG_CHEVRON_RIGHT,
+  SVG_CONTROL_PANEL,
+  SVG_HAMBURGER,
+  SVG_HOME_16,
+  SVG_HOME_18,
+  SVG_RESET_10,
+  SVG_RESET_11,
+  SVG_RESET_12,
+} from "./svgs";
+
 // ─── Settings ────────────────────────────────────────────────────────
 
 type StreamItem =
   | { type: "tool"; label: string; url?: string; textPos?: number }
   | { type: "text"; text: string };
-
-/** Create an SVG element from attributes (avoids innerHTML for ObsidianReviewBot compliance). */
-type SvgSpec = {
-  width: number;
-  height: number;
-  viewBox: string;
-  children: Array<{ tag: string; attrs: Record<string, string> }>;
-};
-
-function createSvgIcon(
-  parent: HTMLElement,
-  svgSpec: SvgSpec,
-  attrs?: Record<string, string>,
-): SVGElement {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = parent.ownerDocument.createElementNS(ns, "svg");
-  svg.setAttribute("width", String(svgSpec.width));
-  svg.setAttribute("height", String(svgSpec.height));
-  svg.setAttribute("viewBox", svgSpec.viewBox);
-  if (attrs) {
-    for (const [k, v] of Object.entries(attrs)) svg.setAttribute(k, v);
-  }
-  for (const child of svgSpec.children) {
-    const el = parent.ownerDocument.createElementNS(ns, child.tag);
-    for (const [k, v] of Object.entries(child.attrs)) el.setAttribute(k, v);
-    svg.appendChild(el);
-  }
-  parent.appendChild(svg);
-  return svg;
-}
-
-// SVG icon definitions (reusable constants)
-const SVG_HAMBURGER = {
-  width: 22,
-  height: 22,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "line",
-      attrs: {
-        x1: "3",
-        y1: "6",
-        x2: "21",
-        y2: "6",
-        stroke: "currentColor",
-        "stroke-width": "2",
-        "stroke-linecap": "round",
-      },
-    },
-    {
-      tag: "line",
-      attrs: {
-        x1: "3",
-        y1: "12",
-        x2: "21",
-        y2: "12",
-        stroke: "currentColor",
-        "stroke-width": "2",
-        "stroke-linecap": "round",
-      },
-    },
-    {
-      tag: "line",
-      attrs: {
-        x1: "3",
-        y1: "18",
-        x2: "21",
-        y2: "18",
-        stroke: "currentColor",
-        "stroke-width": "2",
-        "stroke-linecap": "round",
-      },
-    },
-  ],
-};
-
-const SVG_CONTROL_PANEL: SvgSpec = {
-  width: 18,
-  height: 18,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "rect",
-      attrs: {
-        x: "3",
-        y: "3",
-        width: "18",
-        height: "18",
-        rx: "2",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "1.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-    {
-      tag: "line",
-      attrs: {
-        x1: "9",
-        y1: "3",
-        x2: "9",
-        y2: "21",
-        stroke: "currentColor",
-        "stroke-width": "1.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-  ],
-};
-
-const SVG_CHEVRON_LEFT = {
-  width: 16,
-  height: 16,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "polyline",
-      attrs: {
-        points: "15 18 9 12 15 6",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-  ],
-};
-
-const SVG_CHEVRON_RIGHT = {
-  width: 16,
-  height: 16,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "polyline",
-      attrs: {
-        points: "9 18 15 12 9 6",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-  ],
-};
-
-const SVG_HOME_16 = {
-  width: 16,
-  height: 16,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "path",
-      attrs: {
-        d: "M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z",
-        fill: "currentColor",
-      },
-    },
-  ],
-};
-
-const SVG_HOME_18 = {
-  width: 18,
-  height: 18,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "path",
-      attrs: {
-        d: "M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3l9-8z",
-        fill: "currentColor",
-      },
-    },
-  ],
-};
-
-const SVG_RESET_10 = {
-  width: 10,
-  height: 10,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "path",
-      attrs: {
-        d: "M1 4v6h6",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-    {
-      tag: "path",
-      attrs: {
-        d: "M3.51 15a9 9 0 105.64-12.28L1 10",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-  ],
-};
-
-const SVG_RESET_11 = {
-  width: 11,
-  height: 11,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "path",
-      attrs: {
-        d: "M1 4v6h6",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-    {
-      tag: "path",
-      attrs: {
-        d: "M3.51 15a9 9 0 105.64-12.28L1 10",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-  ],
-};
-
-const SVG_RESET_12 = {
-  width: 12,
-  height: 12,
-  viewBox: "0 0 24 24",
-  children: [
-    {
-      tag: "path",
-      attrs: {
-        d: "M1 4v6h6",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-    {
-      tag: "path",
-      attrs: {
-        d: "M3.51 15a9 9 0 105.64-12.28L1 10",
-        fill: "none",
-        stroke: "currentColor",
-        "stroke-width": "2.5",
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round",
-      },
-    },
-  ],
-};
 
 interface AgentInfo {
   id: string;
@@ -2019,9 +1763,6 @@ class OpenClawChatView extends ItemView {
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
 
-  private readonly micSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
-  private readonly sendSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
-  private readonly stopSvg = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>`;
   private bannerEl!: HTMLElement;
 
   /** Get the session key prefix for the active agent */
@@ -5382,7 +5123,7 @@ export default class OpenClawPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new OpenClawChatView(leaf, this));
 
     // Ribbon icon
-    this.addRibbonIcon("message-square", "OcO chat", () =>> {
+    this.addRibbonIcon("message-square", "OcO chat", () => {
       void this.activateView();
     });
 
