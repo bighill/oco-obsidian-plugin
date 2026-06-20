@@ -38,8 +38,7 @@
 }
 
 /* ClawTabs-style control panel trigger */
-.oc-control-panel-btn,
-.oc-hamburger-dash-btn {
+.oc-control-panel-btn {
   flex-shrink: 0;
   background: none;
   border: none;
@@ -59,12 +58,7 @@
   margin: 0 2px 4px 0;
   border-radius: 8px;
 }
-.oc-hamburger-dash-btn {
-  min-height: 44px;
-  border-right: 1px solid var(--background-modifier-border);
-}
-.oc-control-panel-btn:hover,
-.oc-hamburger-dash-btn:hover {
+.oc-control-panel-btn:hover {
   opacity: 1;
   background: var(--background-modifier-hover);
 }
@@ -444,261 +438,6 @@
   background: var(--background-modifier-active-hover);
 }
 
-/* ─── Mobile Hamburger Tab Switcher ──────────────────────────── */
-.openclaw-tab-bar.oc-hamburger-mode { display: none; }
-
-.oc-hamburger-bar {
-  display: none;
-  flex: 1;
-  min-width: 0;
-  align-items: stretch;
-  gap: 0;
-  min-height: 44px;
-  position: relative;
-  border-bottom: 1px solid var(--background-modifier-border);
-  background: transparent;
-  margin: 0;
-  overflow: visible;
-}
-.oc-hamburger-bar.oc-visible { display: flex; }
-
-.oc-hamburger-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 12px;
-  border-radius: 0;
-  line-height: 1;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.68;
-  border-left: 1px solid var(--background-modifier-border);
-  min-width: 44px;
-  min-height: 44px;
-}
-.oc-hamburger-btn svg { width: 16px; height: 16px; }
-.oc-hamburger-btn:hover { opacity: 1; background: var(--background-modifier-hover); }
-
-/* Tab Switcher */
-.oc-tab-switcher {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0 1px;
-}
-.oc-tab-switcher-arrow {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 10px;
-  border-radius: 6px;
-  line-height: 1;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.65;
-  transition: opacity 0.15s, background 0.15s;
-  min-width: 44px;
-  min-height: 44px;
-}
-.oc-tab-switcher-arrow:hover { background: var(--background-modifier-hover); opacity: 0.9; }
-.oc-tab-switcher-arrow:active { background: var(--background-modifier-active-hover); opacity: 1; }
-
-.oc-tab-switcher-current {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 5px 4px 4px 4px;
-}
-.oc-tab-switcher-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.oc-tab-switcher-label {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-normal);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.oc-tab-switcher-actions {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  flex-shrink: 0;
-}
-.oc-tab-switcher-action {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 10px;
-  border-radius: 6px;
-  line-height: 1;
-  font-size: 14px;
-  opacity: 0.65;
-  min-width: 44px;
-  min-height: 44px;
-  transition: opacity 0.15s, background 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.oc-tab-switcher-action:hover { opacity: 0.9; background: var(--background-modifier-hover); }
-.oc-tab-switcher-action:active { opacity: 1; background: var(--background-modifier-active-hover); }
-
-.oc-tab-switcher-meter {
-  width: 100%;
-  height: 2px;
-  background: var(--background-modifier-hover);
-  border-radius: 1px;
-  overflow: hidden;
-  margin-top: 2px;
-}
-.oc-tab-switcher-meter-fill {
-  height: 100%;
-  border-radius: 1px;
-  background: var(--text-normal);
-  opacity: 0.5;
-  transition: width 0.5s ease;
-  width: var(--oc-meter-width, 0%);
-}
-
-/* Tab loading spinner */
-.oc-tab-loading-spinner {
-  display: inline-block;
-  animation: oc-spin 0.8s linear infinite;
-  font-size: 12px;
-}
-@keyframes oc-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.oc-switcher-rename-input {
-  font-size: 13px;
-  font-weight: 600;
-  background: var(--background-modifier-active-hover);
-  border: 1px solid var(--interactive-accent);
-  border-radius: 4px;
-  color: var(--text-normal);
-  padding: 1px 5px;
-  width: 100%;
-  outline: none;
-}
-
-/* Hamburger Dropdown */
-.oc-hamburger-dropdown {
-  display: none;
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  z-index: 100;
-  max-height: 60vh;
-  overflow-y: auto;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  border-radius: 12px;
-}
-.oc-hamburger-dropdown.oc-open { display: block; }
-
-.oc-hamburger-dropdown-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  gap: 8px;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 13px;
-  border-bottom: 1px solid var(--background-modifier-border);
-  transition: background 0.12s;
-}
-.oc-hamburger-dropdown-item:first-child { border-radius: 12px 12px 0 0; }
-.oc-hamburger-dropdown-item:last-child { border-bottom: none; border-radius: 0 0 12px 12px; }
-.oc-hamburger-dropdown-item:only-child { border-radius: 12px; }
-.oc-hamburger-dropdown-item:hover { background: var(--background-modifier-hover); }
-.oc-hamburger-dropdown-item:active { background: var(--background-modifier-hover); }
-.oc-hamburger-dropdown-item.oc-active {
-  color: var(--text-normal);
-  font-weight: 600;
-  background: var(--background-modifier-hover);
-}
-.oc-dd-label {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.oc-dd-meter {
-  width: 36px;
-  height: 3px;
-  background: var(--background-modifier-hover);
-  border-radius: 1.5px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.oc-dd-meter-fill {
-  height: 100%;
-  border-radius: 1.5px;
-  background: var(--text-normal);
-  opacity: 0.6;
-  width: var(--oc-meter-width, 0%);
-}
-.oc-dd-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.oc-dd-action-btn {
-  cursor: pointer;
-  opacity: 0.4;
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-size: 14px;
-  transition: opacity 0.15s, background 0.15s;
-  line-height: 1;
-}
-.oc-dd-action-btn:hover { opacity: 1; background: var(--background-modifier-hover); }
-.oc-dd-action-close { color: var(--text-muted); }
-.oc-dd-rename-input {
-  font-size: 13px;
-  background: var(--background-modifier-active-hover);
-  border: 1px solid var(--interactive-accent);
-  border-radius: 3px;
-  color: var(--text-normal);
-  padding: 1px 4px;
-  width: 100%;
-  outline: none;
-}
-
-/* Hide desktop tab bar when hamburger is active */
-.openclaw-top-bar.oc-hamburger-active {
-  border-bottom: none;
-  background: transparent;
-}
-.openclaw-top-bar.oc-hamburger-active > .openclaw-tab-bar {
-  display: none;
-}
-.openclaw-top-bar.oc-hamburger-active > .oc-control-panel-btn {
-  display: none;
-}
 
 /* Sub-agent view banner */
 .openclaw-subagent-banner {
@@ -877,7 +616,6 @@
 
 /* Message bubbles */
 .openclaw-msg {
-  max-width: 95%;
   padding: 7px 10px;
   border-radius: 12px;
   font-size: 14px;
