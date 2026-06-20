@@ -119,10 +119,10 @@ Other commands (`ask-about-note`, `reconnect`) stay but do not implicitly create
 | 16 | `styles.css`: Remove `.oc-hamburger-*` and `.oc-tab-switcher*` rules | ✅ |
 | 17 | `styles.css`: Remove `.workspace-drawer-*` overrides if any | ✅ |
 | 18 | `styles.css`: Drop sidebar-tuned `max-width` constraints | ✅ |
-| 19 | Build passes (`npm run build`) | ⏳ |
-| 20 | Sanity check: command opens tab, re-invoke opens another, ribbon works, ask-about-note works | ⏳ |
-| 21 | Update plan, commit | ⏳ |
-| 22 | Open PR | ⏳ |
+| 19 | Build passes (`npm run build`) | ✅ |
+| 20 | Sanity check: command opens tab, re-invoke opens another, ribbon works, ask-about-note works | ✅ |
+| 21 | Update plan, commit | ✅ |
+| 22 | Open PR | 🔄 |
 
 ---
 
