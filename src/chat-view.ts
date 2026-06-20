@@ -21,15 +21,10 @@ import {
 } from './at-mention'
 import {
   createSvgIcon,
-  SVG_CHEVRON_LEFT,
-  SVG_CHEVRON_RIGHT,
   SVG_CONTROL_PANEL,
-  SVG_HAMBURGER,
-  SVG_HOME_16,
   SVG_HOME_18,
   SVG_RESET_10,
   SVG_RESET_11,
-  SVG_RESET_12,
 } from './svgs'
 import { generateId } from './crypto'
 import { deleteSessionWithFallback } from './gateway-client'
@@ -143,16 +138,8 @@ export class OpenClawChatView extends ItemView {
   private topBarEl!: HTMLElement
   private messagesEl!: HTMLElement
   private tabBarEl!: HTMLElement
-  private hamburgerBarEl!: HTMLElement
-  private hamburgerDropdownEl2!: HTMLElement
-  private tabSwitcherLabelEl!: HTMLElement
-  private tabSwitcherMeterFillEl!: HTMLElement
-  private tabSwitcherActionsEl!: HTMLElement
-  private tabArrowLeftEl!: HTMLElement
-  private tabArrowRightEl!: HTMLElement
   private controlPanelEl!: HTMLElement
   private controlPanelBackdropEl!: HTMLElement
-  private isMobileMode = false
   private brainBtnEl!: HTMLElement
   private tabSessions: { key: string; label: string; pct: number }[] = []
   private renderingTabs = false
@@ -184,13 +171,16 @@ export class OpenClawChatView extends ItemView {
 
   private streamEl: HTMLElement | null = null
 
+  /** Local session key for this view. Independent so multiple tabs can have different sessions. */
+  sessionKey = 'main'
+
   /** Get current active session key */
   private get activeSessionKey(): string {
-    return this.plugin.settings.sessionKey || 'main'
+    return this.sessionKey
   }
   /** Get stream state for active tab (if any) */
   private get activeStream() {
-    return this.streams.get(this.activeSessionKey) ?? null
+    return this.streams.get(this.sessionKey) ?? null
   }
 
   private contextMeterEl!: HTMLElement
@@ -296,93 +286,6 @@ export class OpenClawChatView extends ItemView {
       e.stopPropagation()
       this.toggleControlPanel()
     })
-
-    // Hamburger bar (mobile mode - hidden by default)
-    this.hamburgerBarEl = topBar.createDiv('oc-hamburger-bar')
-
-    // Mobile control panel button (left side)
-    const hamburgerControlBtn = this.hamburgerBarEl.createEl('button', {
-      cls: 'oc-hamburger-dash-btn',
-      attr: { 'aria-label': 'Control panel' },
-    })
-    createSvgIcon(hamburgerControlBtn, SVG_CONTROL_PANEL)
-    hamburgerControlBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.toggleControlPanel()
-    })
-
-    // Tab switcher
-    const tabSwitcher = this.hamburgerBarEl.createDiv('oc-tab-switcher')
-    this.tabArrowLeftEl = tabSwitcher.createEl('button', {
-      cls: 'oc-tab-switcher-arrow oc-arrow-left',
-    })
-    createSvgIcon(this.tabArrowLeftEl, SVG_CHEVRON_LEFT)
-    const switcherCurrent = tabSwitcher.createDiv('oc-tab-switcher-current')
-    const switcherRow = switcherCurrent.createDiv('oc-tab-switcher-row')
-    this.tabSwitcherLabelEl = switcherRow.createSpan('oc-tab-switcher-label')
-    this.tabSwitcherLabelEl.textContent = 'Home'
-    this.tabSwitcherActionsEl = switcherRow.createSpan(
-      'oc-tab-switcher-actions'
-    )
-    const switcherMeter = switcherCurrent.createDiv('oc-tab-switcher-meter')
-    this.tabSwitcherMeterFillEl = switcherMeter.createDiv(
-      'oc-tab-switcher-meter-fill'
-    )
-    this.tabArrowRightEl = tabSwitcher.createEl('button', {
-      cls: 'oc-tab-switcher-arrow oc-arrow-right',
-    })
-    createSvgIcon(this.tabArrowRightEl, SVG_CHEVRON_RIGHT)
-
-    // Hamburger button lives on the right in ClawTabs mobile mode
-    const hamburgerBtn = this.hamburgerBarEl.createEl('button', {
-      cls: 'oc-hamburger-btn',
-      attr: { 'aria-label': 'Tabs' },
-    })
-    createSvgIcon(hamburgerBtn, SVG_HAMBURGER)
-
-    // Hamburger dropdown
-    this.hamburgerDropdownEl2 = this.hamburgerBarEl.createDiv(
-      'oc-hamburger-dropdown'
-    )
-
-    // Arrow click handlers
-    this.tabArrowLeftEl.addEventListener('click', (e) => {
-      e.stopPropagation()
-      const currentKey = this.plugin.settings.sessionKey || 'main'
-      const idx = this.tabSessions.findIndex((t) => t.key === currentKey)
-      if (idx > 0) this.switchToTab(this.tabSessions[idx - 1])
-    })
-    this.tabArrowRightEl.addEventListener('click', (e) => {
-      e.stopPropagation()
-      const currentKey = this.plugin.settings.sessionKey || 'main'
-      const idx = this.tabSessions.findIndex((t) => t.key === currentKey)
-      if (idx < this.tabSessions.length - 1)
-        this.switchToTab(this.tabSessions[idx + 1])
-    })
-
-    // Hamburger button toggles dropdown
-    hamburgerBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.renderHamburgerDropdown()
-      this.hamburgerDropdownEl2.toggleClass(
-        'oc-open',
-        !this.hamburgerDropdownEl2.hasClass('oc-open')
-      )
-    })
-    activeDocument.addEventListener('click', (e) => {
-      if (
-        !this.hamburgerDropdownEl2.contains(e.target as Node) &&
-        e.target !== hamburgerBtn &&
-        !hamburgerBtn.contains(e.target as Node)
-      ) {
-        this.hamburgerDropdownEl2.removeClass('oc-open')
-      }
-    })
-
-    // Watch for resize to toggle mobile mode
-    const resizeObserver = new ResizeObserver(() => this.updateTabMode())
-    resizeObserver.observe(container)
-    this.register(() => resizeObserver.disconnect())
 
     // Agent switching lives in the control panel. Keep this legacy element hidden
     // so the top-right UI matches ClawTabs' cleaner header.
@@ -605,101 +508,8 @@ export class OpenClawChatView extends ItemView {
 
     // Initial state
     this.updateStatus()
-    this.plugin.chatView = this
-
-    // Mobile keyboard avoidance:
-    // 1. Capacitor Keyboard.setResizeMode('native') - makes webview shrink with keyboard
-    // 2. Hide Obsidian's bottom drawer elements when keyboard is open - they waste ~120px
-    try {
-      type KeyboardResizeMode = 'none' | 'native' | 'body' | 'ionic'
-      type KeyboardPlugin = {
-        setResizeMode?: (opts: {
-          mode: KeyboardResizeMode
-        }) => Promise<void> | void
-        addListener: (
-          eventName: 'keyboardWillShow' | 'keyboardDidHide',
-          listener: () => void
-        ) => unknown
-      }
-      type CapacitorRuntime = {
-        Plugins?: {
-          Keyboard?: KeyboardPlugin
-        }
-      }
-      const cap = (window as unknown as { Capacitor?: CapacitorRuntime })
-        .Capacitor
-      if (cap?.Plugins?.Keyboard) {
-        const kb = cap.Plugins.Keyboard
-
-        // Set resize mode to native so webview shrinks
-        await kb.setResizeMode?.({ mode: 'native' })
-
-        // Find bottom drawer siblings that waste space
-        const drawerInner = container.closest<HTMLElement>(
-          '.workspace-drawer-inner'
-        )
-        const tabContainer =
-          drawerInner?.querySelector<HTMLElement>(
-            '.workspace-drawer-tab-container'
-          ) ?? null
-        let hiddenSiblings: HTMLElement[] = []
-
-        const onKeyboardShow = () => {
-          if (!drawerInner || !tabContainer) return
-          // Hide all siblings of workspace-drawer-tab-container (tab dots, bottom panes)
-          hiddenSiblings = []
-          for (const child of Array.from(
-            drawerInner.children
-          ) as HTMLElement[]) {
-            if (child !== tabContainer && !child.hasClass('oc-hidden')) {
-              hiddenSiblings.push(child)
-              child.addClass('oc-hidden')
-            }
-          }
-          // Also hide tab header within the tab container (the "Plugin" header bar)
-          const activeTabContainer = tabContainer.querySelector<HTMLElement>(
-            '.workspace-drawer-active-tab-container'
-          )
-          if (activeTabContainer) {
-            for (const child of Array.from(
-              activeTabContainer.children
-            ) as HTMLElement[]) {
-              const isContent = child.classList.contains(
-                'workspace-drawer-active-tab-content'
-              )
-              if (!isContent && !child.hasClass('oc-hidden')) {
-                hiddenSiblings.push(child)
-                child.addClass('oc-hidden')
-              }
-            }
-          }
-        }
-
-        const onKeyboardHide = () => {
-          // Restore hidden siblings
-          for (const el of hiddenSiblings) {
-            el.removeClass('oc-hidden')
-          }
-          hiddenSiblings = []
-        }
-
-        // Listen for Capacitor keyboard events
-        kb.addListener('keyboardWillShow', onKeyboardShow)
-        kb.addListener('keyboardDidHide', onKeyboardHide)
-        window.addEventListener('keyboardWillShow', onKeyboardShow)
-        window.addEventListener('keyboardDidHide', onKeyboardHide)
-
-        // Restore on view close
-        this.register(() => {
-          void kb.setResizeMode?.({ mode: 'none' })
-          onKeyboardHide()
-          window.removeEventListener('keyboardWillShow', onKeyboardShow)
-          window.removeEventListener('keyboardDidHide', onKeyboardHide)
-        })
-      }
-    } catch {
-      /* not on mobile / Capacitor not available */
-    }
+    this.plugin.registerChatView(this)
+    this.sessionKey = this.plugin.settings.sessionKey || 'main'
 
     // Init touch gestures for mobile
     this.initTouchGestures()
@@ -843,9 +653,7 @@ export class OpenClawChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
-    if (this.plugin.chatView === this) {
-      this.plugin.chatView = null
-    }
+    this.plugin.unregisterChatView(this)
   }
 
   /** Reload the chat view when settings change externally (e.g. onboarding, settings tab) */
@@ -1015,7 +823,7 @@ export class OpenClawChatView extends ItemView {
     if (agent.id === this.activeAgent.id) return
     this.activeAgent = agent
     this.plugin.settings.activeAgentId = agent.id
-    this.plugin.settings.sessionKey = 'main' // reset to main session of new agent
+    this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main' // reset to main session of new agent
     await this.plugin.saveSettings()
     this.updateAgentButton()
     await this.loadHistory()
@@ -1064,7 +872,7 @@ export class OpenClawChatView extends ItemView {
     if (!this.plugin.gateway?.connected) return
     try {
       const result = (await this.plugin.gateway.request('chat.history', {
-        sessionKey: this.plugin.settings.sessionKey,
+        sessionKey: this.sessionKey,
         limit: 200,
       })) as { messages?: HistoryMessage[] } | null
       if (result?.messages && Array.isArray(result.messages)) {
@@ -1457,7 +1265,7 @@ export class OpenClawChatView extends ItemView {
       )) as { sessions?: SessionInfo[] } | null
       const sessions: SessionInfo[] = result?.sessions || []
       // Find session matching current sessionKey (try exact match, then with agent prefix)
-      const sk = this.plugin.settings.sessionKey || 'main'
+      const sk = this.sessionKey
       const session =
         sessions.find((s: SessionInfo) => s.key === sk) ||
         sessions.find(
@@ -1517,7 +1325,7 @@ export class OpenClawChatView extends ItemView {
       if ((added || removed) && !this.tabDeleteInProgress) {
         // If viewing a session that no longer exists, switch back to main
         if (removed && !currentSessionKeys.has(`${agentPrefix}${sk}`)) {
-          this.plugin.settings.sessionKey = 'main'
+          this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main'
           await this.plugin.saveSettings()
           this.messages = []
           this.messagesEl.empty()
@@ -1611,255 +1419,13 @@ export class OpenClawChatView extends ItemView {
     this.updateBarControls()
   }
 
-  private updateTabMode(): void {
-    if (!this.topBarEl || !this.tabBarEl || !this.hamburgerBarEl) return
-    const containerWidth = this.containerEl.children[1]?.clientWidth || 400
-    const tabCount = this.tabSessions.length + 1 // +1 for add button
-    const perTab = containerWidth / tabCount
-    const shouldBeMobile = containerWidth < 400 || perTab < 60
-    if (shouldBeMobile !== this.isMobileMode) {
-      this.isMobileMode = shouldBeMobile
-      if (shouldBeMobile) {
-        this.topBarEl.addClass('oc-hamburger-active')
-        this.tabBarEl.addClass('oc-hamburger-mode')
-        this.hamburgerBarEl.addClass('oc-visible')
-        this.profileBtnEl?.addClass('oc-hidden')
-      } else {
-        this.topBarEl.removeClass('oc-hamburger-active')
-        this.tabBarEl.removeClass('oc-hamburger-mode')
-        this.hamburgerBarEl.removeClass('oc-visible')
-        this.hamburgerDropdownEl2.removeClass('oc-open')
-        this.profileBtnEl?.addClass('oc-hidden')
-      }
-    }
-    if (shouldBeMobile) this.renderMobileTabSwitcher()
-  }
-
-  private renderMobileTabSwitcher(): void {
-    const currentKey = this.plugin.settings.sessionKey || 'main'
-    const currentIdx = this.tabSessions.findIndex((t) => t.key === currentKey)
-    const current =
-      currentIdx >= 0 ? this.tabSessions[currentIdx] : this.tabSessions[0]
-    const isHome = current.key === 'main'
-
-    // Label
-    if (isHome) {
-      this.tabSwitcherLabelEl.empty()
-      createSvgIcon(this.tabSwitcherLabelEl, SVG_HOME_16, {
-        style: 'vertical-align:-3px;opacity:0.7',
-      })
-      this.tabSwitcherLabelEl.title = ''
-      this.tabSwitcherLabelEl.removeClass('oc-cursor-default')
-      this.tabSwitcherLabelEl.ondblclick = null
-    } else {
-      this.tabSwitcherLabelEl.textContent = current.label
-      this.tabSwitcherLabelEl.title = 'Double-click to rename'
-      this.tabSwitcherLabelEl.addClass('oc-cursor-default')
-      this.tabSwitcherLabelEl.ondblclick = (e: MouseEvent) => {
-        e.stopPropagation()
-        this.startSwitcherRename(current)
-      }
-    }
-
-    // Meter
-    this.tabSwitcherMeterFillEl.setCssProps({
-      '--oc-meter-width': (current.pct || 0) + '%',
-    })
-
-    // Minimal mobile header: hide arrows
-    this.tabArrowLeftEl.addClass('oc-hidden')
-    this.tabArrowRightEl.addClass('oc-hidden')
-
-    // Minimal mobile header: hide inline actions (reset/close)
-    this.tabSwitcherActionsEl.empty()
-  }
-
-  private startSwitcherRename(tab: {
-    key: string
-    label: string
-    pct: number
-  }): void {
-    const input = createEl('input')
-    input.type = 'text'
-    input.value = tab.label
-    input.maxLength = 30
-    input.className = 'oc-switcher-rename-input'
-    this.tabSwitcherLabelEl.textContent = ''
-    this.tabSwitcherLabelEl.appendChild(input)
-    input.focus()
-    input.select()
-    const finish = async (save: boolean) => {
-      const newName = input.value.trim()
-      if (save && newName && newName !== tab.label) {
-        try {
-          await this.plugin.gateway?.request('sessions.patch', {
-            key: `${this.agentPrefix}${tab.key}`,
-            label: newName,
-          })
-          tab.label = newName
-        } catch {
-          /* keep old name */
-        }
-      }
-      void this.renderTabs()
-      this.renderMobileTabSwitcher()
-    }
-    input.addEventListener('keydown', (ev: KeyboardEvent) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault()
-        void finish(true)
-      }
-      if (ev.key === 'Escape') {
-        ev.preventDefault()
-        void finish(false)
-      }
-      ev.stopPropagation()
-    })
-    input.addEventListener('blur', () => void finish(true))
-    input.addEventListener('click', (e) => e.stopPropagation())
-  }
-
-  private renderHamburgerDropdown(): void {
-    this.hamburgerDropdownEl2.empty()
-    const currentKey = this.plugin.settings.sessionKey || 'main'
-
-    for (const tab of this.tabSessions) {
-      const isHome = tab.key === 'main'
-      const isCurrent = tab.key === currentKey
-      const item = this.hamburgerDropdownEl2.createDiv({
-        cls: `oc-hamburger-dropdown-item${isCurrent ? ' oc-active' : ''}`,
-      })
-
-      // Label
-      const label = item.createSpan({ cls: 'oc-dd-label' })
-      if (isHome) {
-        createSvgIcon(label, SVG_HOME_16, {
-          style: 'vertical-align:-3px;opacity:0.7',
-        })
-        label.appendText(' Home')
-      } else {
-        label.textContent = tab.label
-        label.title = 'Double-click to rename'
-        label.addEventListener('dblclick', (e) => {
-          e.stopPropagation()
-          this.startDropdownRename(label, tab)
-        })
-      }
-
-      // Context meter
-      const meter = item.createDiv({ cls: 'oc-dd-meter' })
-      const fill = meter.createDiv({ cls: 'oc-dd-meter-fill' })
-      fill.setCssProps({ '--oc-meter-width': tab.pct + '%' })
-
-      // Actions
-      const actions = item.createSpan({ cls: 'oc-dd-actions' })
-
-      // Reset
-      const resetBtn = actions.createSpan({ cls: 'oc-dd-action-btn' })
-      createSvgIcon(resetBtn, SVG_RESET_12)
-      resetBtn.title = 'Reset conversation'
-      resetBtn.addEventListener('click', (e) => {
-        e.stopPropagation()
-        this.hamburgerDropdownEl2.removeClass('oc-open')
-        void this.resetTabAction(tab)
-      })
-
-      // Close (real or spacer)
-      if (!isHome) {
-        const closeBtn = actions.createSpan({
-          text: '×',
-          cls: 'oc-dd-action-btn oc-dd-action-close',
-        })
-        closeBtn.title = 'Close tab'
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          this.hamburgerDropdownEl2.removeClass('oc-open')
-          void this.closeTabAction(tab)
-        })
-      } else {
-        actions.createSpan({
-          text: '×',
-          cls: 'oc-dd-action-btn oc-visibility-hidden',
-        })
-      }
-
-      // Click to switch
-      item.addEventListener('click', () => {
-        this.hamburgerDropdownEl2.removeClass('oc-open')
-        if (!isCurrent) this.switchToTab(tab)
-      })
-    }
-
-    // + New Tab
-    const addItem = this.hamburgerDropdownEl2.createDiv({
-      cls: 'oc-hamburger-dropdown-item oc-justify-center oc-text-muted oc-opacity-07',
-    })
-    addItem.createSpan({ text: '+ New Tab' })
-    addItem.addEventListener('click', () => {
-      this.hamburgerDropdownEl2.removeClass('oc-open')
-      void this.createNewTabAction()
-    })
-  }
-
-  private startDropdownRename(
-    labelEl: HTMLElement,
-    tab: { key: string; label: string; pct: number }
-  ): void {
-    const input = createEl('input', { cls: 'oc-dd-rename-input' })
-    input.value = tab.label
-    input.maxLength = 30
-    labelEl.textContent = ''
-    labelEl.appendChild(input)
-    input.focus()
-    input.select()
-    const finish = async (save: boolean) => {
-      const newName = input.value.trim()
-      if (save && newName && newName !== tab.label) {
-        try {
-          await this.plugin.gateway?.request('sessions.patch', {
-            key: `${this.agentPrefix}${tab.key}`,
-            label: newName,
-          })
-          tab.label = newName
-        } catch {
-          /* keep old name */
-        }
-      }
-      labelEl.textContent = tab.label
-      void this.renderTabs()
-      this.renderMobileTabSwitcher()
-    }
-    input.addEventListener('keydown', (ev: KeyboardEvent) => {
-      if (ev.key === 'Enter') {
-        ev.preventDefault()
-        void finish(true)
-      }
-      if (ev.key === 'Escape') {
-        ev.preventDefault()
-        void finish(false)
-      }
-      ev.stopPropagation()
-    })
-    input.addEventListener('blur', () => void finish(true))
-    input.addEventListener('click', (e) => e.stopPropagation())
-  }
-
   private switchToTab(tab: { key: string; label: string; pct: number }): void {
     void (async () => {
-      // Show loading indicator
-      if (this.isMobileMode && this.tabSwitcherLabelEl) {
-        this.tabSwitcherLabelEl.empty()
-        this.tabSwitcherLabelEl.createSpan({
-          cls: 'oc-tab-loading-spinner',
-          text: '⟳',
-        })
-        this.tabSwitcherLabelEl.createSpan({ text: ' Loading...' })
-      }
       this.streamEl = null
       this.typingEl.addClass('oc-hidden')
       this.abortBtn.addClass('oc-hidden')
       this.hideBanner()
-      this.plugin.settings.sessionKey = tab.key
+      this.sessionKey = tab.key; this.plugin.settings.sessionKey = tab.key
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -1878,7 +1444,7 @@ export class OpenClawChatView extends ItemView {
     pct: number
   }): Promise<void> {
     if (!this.plugin.gateway?.connected) return
-    const currentKey = this.plugin.settings.sessionKey || 'main'
+    const currentKey = this.sessionKey
     const isHome = tab.key === 'main'
     const title = isHome ? 'Reset Home tab?' : `Reset "${tab.label}"?`
     if (!this.isCloseConfirmDisabled()) {
@@ -1915,7 +1481,7 @@ export class OpenClawChatView extends ItemView {
     pct: number
   }): Promise<void> {
     if (!this.plugin.gateway?.connected || this.tabDeleteInProgress) return
-    const currentKey = this.plugin.settings.sessionKey || 'main'
+    const currentKey = this.sessionKey
     if (!this.isCloseConfirmDisabled()) {
       const confirmed = await this.confirmTabClose(
         'Close tab?',
@@ -1939,7 +1505,7 @@ export class OpenClawChatView extends ItemView {
     }
     this.finishStream(tab.key)
     if (tab.key === currentKey) {
-      this.plugin.settings.sessionKey = 'main'
+      this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main'
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -1963,7 +1529,7 @@ export class OpenClawChatView extends ItemView {
         deliver: false,
         idempotencyKey: 'newtab-' + Date.now(),
       })
-      this.plugin.settings.sessionKey = sessionKey
+      this.sessionKey = sessionKey; this.plugin.settings.sessionKey = sessionKey
       await this.plugin.saveSettings()
       this.messages = []
       this.messagesEl.empty()
@@ -1986,7 +1552,7 @@ export class OpenClawChatView extends ItemView {
 
   private async _renderTabsInner(): Promise<void> {
     this.tabBarEl.empty()
-    const currentKey = this.plugin.settings.sessionKey || 'main'
+    const currentKey = this.sessionKey
 
     // Fetch sessions from gateway
     let sessions: SessionInfo[] = []
@@ -2234,7 +1800,7 @@ export class OpenClawChatView extends ItemView {
             }
             this.finishStream(tab.key)
             if (tab.key === currentKey) {
-              this.plugin.settings.sessionKey = 'main'
+              this.sessionKey = 'main'; this.plugin.settings.sessionKey = 'main'
               await this.plugin.saveSettings()
               this.messages = []
               this.messagesEl.empty()
@@ -2297,7 +1863,7 @@ export class OpenClawChatView extends ItemView {
               this.abortBtn.addClass('oc-hidden')
               this.hideBanner()
 
-              this.plugin.settings.sessionKey = tab.key
+              this.sessionKey = tab.key; this.plugin.settings.sessionKey = tab.key
               await this.plugin.saveSettings()
               this.messages = []
               this.messagesEl.empty()
@@ -2351,7 +1917,7 @@ export class OpenClawChatView extends ItemView {
             this.abortBtn.addClass('oc-hidden')
             this.hideBanner()
 
-            this.plugin.settings.sessionKey = sessionKey
+            this.sessionKey = sessionKey; this.plugin.settings.sessionKey = sessionKey
             this.messages = []
             if (this.plugin.settings.streamItemsMap)
               this.plugin.settings.streamItemsMap = {}
@@ -2368,8 +1934,6 @@ export class OpenClawChatView extends ItemView {
         })()
     )
 
-    // Check if mobile mode needed
-    this.updateTabMode()
   }
 
   // ─── Confirm close dialog ──────────────────────────────────────────
@@ -2448,7 +2012,7 @@ export class OpenClawChatView extends ItemView {
     if (!this.plugin.gateway?.connected) return
     try {
       await this.plugin.gateway.request('chat.send', {
-        sessionKey: this.plugin.settings.sessionKey || 'main',
+        sessionKey: this.sessionKey || 'main',
         message: '/reset',
         deliver: false,
         idempotencyKey: 'reset-' + Date.now(),
@@ -2489,7 +2053,7 @@ export class OpenClawChatView extends ItemView {
     try {
       this.showBanner('Compacting context...')
       await this.plugin.gateway.request('chat.send', {
-        sessionKey: this.plugin.settings.sessionKey,
+        sessionKey: this.sessionKey,
         message: '/compact',
         deliver: false,
         idempotencyKey: 'compact-' + Date.now(),
@@ -2522,7 +2086,7 @@ export class OpenClawChatView extends ItemView {
     if (!this.plugin.gateway?.connected) return
     try {
       await this.plugin.gateway.request('chat.send', {
-        sessionKey: this.plugin.settings.sessionKey,
+        sessionKey: this.sessionKey,
         message: '/new',
         deliver: false,
         idempotencyKey: 'new-' + Date.now(),

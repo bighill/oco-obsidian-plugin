@@ -110,12 +110,12 @@ Other commands (`ask-about-note`, `reconnect`) stay but do not implicitly create
 | 7 | `main.ts`: Update ribbon icon to open new tab | ✅ |
 | 8 | `main.ts`: Broadcast gateway events to all registered views | ✅ |
 | 9 | `main.ts`: Remove `onLayoutReady` auto-open | ✅ |
-| 10 | `chat-view.ts`: Register/unregister with plugin in `onOpen`/`onClose` | ⏳ |
-| 11 | `chat-view.ts`: Delete Capacitor Keyboard drawer-hiding block | ⏳ |
-| 12 | `chat-view.ts`: Delete hamburger bar, tab switcher, dropdown, and mobile mode code | ⏳ |
-| 13 | `chat-view.ts`: Delete `updateTabMode()`, `renderMobileTabSwitcher()`, etc. | ⏳ |
-| 14 | `chat-view.ts`: Remove ResizeObserver for narrow-layout | ⏳ |
-| 15 | `chat-view.ts`: Ensure stream handlers gate on matching `sessionKey` | ⏳ |
+| 10 | `chat-view.ts`: Register/unregister with plugin in `onOpen`/`onClose` | ✅ |
+| 11 | `chat-view.ts`: Delete Capacitor Keyboard drawer-hiding block | ✅ |
+| 12 | `chat-view.ts`: Delete hamburger bar, tab switcher, dropdown, and mobile mode code | ✅ |
+| 13 | `chat-view.ts`: Delete `updateTabMode()`, `renderMobileTabSwitcher()`, etc. | ✅ |
+| 14 | `chat-view.ts`: Remove ResizeObserver for narrow-layout | ✅ |
+| 15 | `chat-view.ts`: Ensure stream handlers gate on matching `sessionKey` | ✅ |
 | 16 | `styles.css`: Remove `.oc-hamburger-*` and `.oc-tab-switcher*` rules | ⏳ |
 | 17 | `styles.css`: Remove `.workspace-drawer-*` overrides if any | ⏳ |
 | 18 | `styles.css`: Drop sidebar-tuned `max-width` constraints | ⏳ |
