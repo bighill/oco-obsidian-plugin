@@ -41,12 +41,36 @@ export default class OpenClawPlugin extends Plugin {
   gateway: GatewayClient | null = null
   gatewayConnected = false
   lastGatewayConnectError = ''
-  chatView: OpenClawChatView | null = null
+  private chatViews = new Set<OpenClawChatView>()
+  activeChatView: OpenClawChatView | null = null
   // Consecutive close events with no successful hello in between.
   // After a few in a row, we surface the patch hint - a likely sign the
   // gateway is rejecting our origin during the websocket handshake.
   private handshakeFailuresInARow = 0
   private patchHintShownThisSession = false
+
+  /** Register an open chat view so gateway events can reach it. */
+  registerChatView(view: OpenClawChatView): void {
+    this.chatViews.add(view)
+    this.activeChatView = view
+  }
+
+  /** Unregister a closed chat view. */
+  unregisterChatView(view: OpenClawChatView): void {
+    this.chatViews.delete(view)
+    if (this.activeChatView === view) {
+      // Pick another active view, or null if none remain
+      const next = this.chatViews.values().next()
+      this.activeChatView = next.done ? null : next.value
+    }
+  }
+
+  /** Invoke a callback on every registered chat view. */
+  broadcastToChatViews(fn: (view: OpenClawChatView) => void): void {
+    for (const view of this.chatViews) {
+      fn(view)
+    }
+  }
 
   async onload(): Promise<void> {
     await this.loadSettings()
@@ -55,14 +79,14 @@ export default class OpenClawPlugin extends Plugin {
 
     // Ribbon icon
     this.addRibbonIcon('message-square', 'OcO chat', () => {
-      void this.activateView()
+      void this.openChatInNewTab()
     })
 
     // Commands
     this.addCommand({
-      id: 'toggle-chat',
-      name: 'Toggle chat sidebar',
-      callback: () => void this.activateView(),
+      id: 'open-chat-tab',
+      name: 'Open chat in new tab',
+      callback: () => void this.openChatInNewTab(),
     })
 
     this.addCommand({
@@ -79,14 +103,11 @@ export default class OpenClawPlugin extends Plugin {
 
     this.addSettingTab(new OpenClawSettingTab(this.app, this))
 
-    // Show welcome on first run, otherwise auto-connect and open chat
+    // Show welcome on first run; otherwise auto-connect only (no auto-open)
     if (!this.settings.gatewayUrl) {
       window.setTimeout(() => new WelcomeModal(this.app).open(), 500)
     } else {
       void this.connectGateway()
-      this.app.workspace.onLayoutReady(() => {
-        void this.activateView()
-      })
     }
   }
 
@@ -118,7 +139,7 @@ export default class OpenClawPlugin extends Plugin {
     this.gateway?.stop()
     this.gatewayConnected = false
     this.lastGatewayConnectError = ''
-    this.chatView?.updateStatus()
+    this.broadcastToChatViews((v) => v.updateStatus())
 
     const rawUrl = this.settings.gatewayUrl.trim()
     if (!rawUrl) return
@@ -160,22 +181,24 @@ export default class OpenClawPlugin extends Plugin {
         this.gatewayConnected = true
         this.lastGatewayConnectError = ''
         this.handshakeFailuresInARow = 0
-        this.chatView?.updateStatus()
-        this.chatView?.hidePairingBanner() // Dismiss pairing banner on successful connection
-        void this.chatView?.loadHistory()
-        void this.chatView?.renderTabs()
-        void this.chatView?.loadAgents()
-        void this.chatView?.loadDefaults()
+        this.broadcastToChatViews((v) => v.updateStatus())
+        this.broadcastToChatViews((v) => v.hidePairingBanner()) // Dismiss pairing banner on successful connection
+        this.broadcastToChatViews((v) => void v.loadHistory())
+        this.broadcastToChatViews((v) => void v.renderTabs())
+        this.broadcastToChatViews((v) => void v.loadAgents())
+        this.broadcastToChatViews((v) => void v.loadDefaults())
         // Restore persisted model selection
-        if (this.settings.currentModel && this.chatView) {
-          this.chatView.currentModel = this.settings.currentModel
-          this.chatView.updateModelPill()
+        if (this.settings.currentModel) {
+          this.broadcastToChatViews((v) => {
+            v.currentModel = this.settings.currentModel!
+            v.updateModelPill()
+          })
         }
       },
       onClose: (info) => {
         const wasConnected = this.gatewayConnected
         this.gatewayConnected = false
-        this.chatView?.updateStatus()
+        this.broadcastToChatViews((v) => v.updateStatus())
         // Show pairing banner if needed
         const reason = info.reason.toLowerCase()
         if (
@@ -185,7 +208,7 @@ export default class OpenClawPlugin extends Plugin {
           reason.includes('scope') ||
           reason.includes('auth')
         ) {
-          this.chatView?.showPairingBanner()
+          this.broadcastToChatViews((v) => v.showPairingBanner())
         }
         // Track handshake-only failures (closed without ever reaching onHello).
         // 3+ in a row with no descriptive reason is a strong hint the gateway
@@ -211,9 +234,9 @@ export default class OpenClawPlugin extends Plugin {
       },
       onEvent: (evt) => {
         if (evt.event === 'chat') {
-          this.chatView?.handleChatEvent(evt.payload)
+          this.broadcastToChatViews((v) => v.handleChatEvent(evt.payload))
         } else if (evt.event === 'stream' || evt.event === 'agent') {
-          this.chatView?.handleStreamEvent(evt.payload)
+          this.broadcastToChatViews((v) => v.handleStreamEvent(evt.payload))
         }
       },
     })
@@ -221,17 +244,10 @@ export default class OpenClawPlugin extends Plugin {
     this.gateway.start()
   }
 
-  async activateView(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE)
-    if (existing.length > 0) {
-      this.app.workspace.setActiveLeaf(existing[0], { focus: true })
-      return
-    }
-    const leaf = this.app.workspace.getRightLeaf(false)
-    if (leaf) {
-      await leaf.setViewState({ type: VIEW_TYPE, active: true })
-      this.app.workspace.setActiveLeaf(leaf, { focus: true })
-    }
+  async openChatInNewTab(): Promise<void> {
+    const leaf = this.app.workspace.getLeaf('tab')
+    await leaf.setViewState({ type: VIEW_TYPE, active: true })
+    this.app.workspace.setActiveLeaf(leaf, { focus: true })
   }
 
   async askAboutNote(): Promise<void> {
@@ -247,15 +263,27 @@ export default class OpenClawPlugin extends Plugin {
       return
     }
 
-    await this.activateView()
+    let target = this.activeChatView
+    if (!target) {
+      await this.openChatInNewTab()
+      // Give the view a moment to instantiate and register itself
+      await new Promise((r) => window.setTimeout(r, 50))
+      target = this.activeChatView
+    } else {
+      // Focus the existing leaf
+      const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE).find(
+        (l) => (l.view as OpenClawChatView) === target
+      )
+      if (leaf) this.app.workspace.setActiveLeaf(leaf, { focus: true })
+    }
 
-    if (!this.chatView || !this.gateway?.connected) {
+    if (!target || !this.gateway?.connected) {
       new Notice('Not connected to OcO')
       return
     }
 
     const message = `Here is my current note "${file.basename}":\n\n${content}\n\nWhat can you tell me about this?`
-    const inputEl = this.chatView.containerEl.querySelector(
+    const inputEl = target.containerEl.querySelector(
       '.openclaw-input'
     ) as HTMLTextAreaElement
     if (inputEl) {

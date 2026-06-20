@@ -97,6 +97,35 @@ Other commands (`ask-about-note`, `reconnect`) stay but do not implicitly create
 
 ---
 
+## Progress Tracker
+
+| Step | Task | Status |
+|---|---|---|
+| 1 | Update `plan-chat-in-tab.md` with progress tracker | ✅ |
+| 2 | `main.ts`: Replace singleton `chatView` with registry (`chatViews` Set + `activeChatView`) | ✅ |
+| 3 | `main.ts`: Add `registerChatView`, `unregisterChatView`, `broadcastToChatViews` | ✅ |
+| 4 | `main.ts`: Implement `openChatInNewTab()` using `getLeaf('tab')` | ✅ |
+| 5 | `main.ts`: Update `askAboutNote()` to use active chat view or create new tab | ✅ |
+| 6 | `main.ts`: Replace `toggle-chat` command with `open-chat-tab` command | ✅ |
+| 7 | `main.ts`: Update ribbon icon to open new tab | ✅ |
+| 8 | `main.ts`: Broadcast gateway events to all registered views | ✅ |
+| 9 | `main.ts`: Remove `onLayoutReady` auto-open | ✅ |
+| 10 | `chat-view.ts`: Register/unregister with plugin in `onOpen`/`onClose` | ⏳ |
+| 11 | `chat-view.ts`: Delete Capacitor Keyboard drawer-hiding block | ⏳ |
+| 12 | `chat-view.ts`: Delete hamburger bar, tab switcher, dropdown, and mobile mode code | ⏳ |
+| 13 | `chat-view.ts`: Delete `updateTabMode()`, `renderMobileTabSwitcher()`, etc. | ⏳ |
+| 14 | `chat-view.ts`: Remove ResizeObserver for narrow-layout | ⏳ |
+| 15 | `chat-view.ts`: Ensure stream handlers gate on matching `sessionKey` | ⏳ |
+| 16 | `styles.css`: Remove `.oc-hamburger-*` and `.oc-tab-switcher*` rules | ⏳ |
+| 17 | `styles.css`: Remove `.workspace-drawer-*` overrides if any | ⏳ |
+| 18 | `styles.css`: Drop sidebar-tuned `max-width` constraints | ⏳ |
+| 19 | Build passes (`npm run build`) | ⏳ |
+| 20 | Sanity check: command opens tab, re-invoke opens another, ribbon works, ask-about-note works | ⏳ |
+| 21 | Update plan, commit | ⏳ |
+| 22 | Open PR | ⏳ |
+
+---
+
 ## Acceptance Criteria
 
 1. `npm run build` passes.
