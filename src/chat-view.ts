@@ -668,6 +668,12 @@ export class OpenClawChatView extends ItemView {
       text: this.activeAgent.emoji || '🤖',
       cls: 'openclaw-agent-emoji',
     })
+    if (this.agents.length <= 1) {
+      this.profileBtnEl.addClass('oc-hidden')
+      this.profileDropdownEl?.addClass('oc-hidden')
+    } else {
+      this.profileBtnEl.removeClass('oc-hidden')
+    }
   }
 
   /** Switch to a different agent */
@@ -685,6 +691,7 @@ export class OpenClawChatView extends ItemView {
   /** Toggle the agent switcher dropdown */
   private toggleAgentSwitcher(): void {
     if (!this.profileDropdownEl) return
+    if (this.agents.length <= 1) return
     const visible = !this.profileDropdownEl.hasClass('oc-hidden')
     if (visible) {
       this.profileDropdownEl.addClass('oc-hidden')
