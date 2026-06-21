@@ -90,4 +90,4 @@ The control panel (opened via the gear/dash button in the top bar) is a large si
 - [x] **Commit 1**: Removed control panel class fields, control panel button & DOM scaffolding from `onOpen`; revealed agent switcher button (removed `oc-hidden`, added click listener, fixed CSS `display: none` → `flex`, made `updateAgentButton()` render emoji). Build passes.
 - [x] **Commit 2**: Removed control panel methods (`toggleControlPanel`, `openControlPanel`, `closeControlPanel`, `renderControlPanel`) and unused `SVG_CONTROL_PANEL` import from `chat-view.ts`. Build & lint pass.
 - [x] **Commit 3**: Removed `SVG_CONTROL_PANEL` definition from `svgs.ts`. Build, lint, test pass.
-- [ ] **Commit 4**: Remove control panel CSS selectors from `styles.css`.
+- [x] **Commit 4**: Removed all control panel CSS selectors from `styles.css` (~160 lines). Build, lint, test pass. All acceptance criteria met.
