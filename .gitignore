@@ -5,3 +5,4 @@ data.json
 .vercel
 landing/.vercel
 .claude/
+*.png
