@@ -138,8 +138,6 @@ export class OpenClawChatView extends ItemView {
   private topBarEl!: HTMLElement
   private messagesEl!: HTMLElement
   private tabBarEl!: HTMLElement
-  private controlPanelEl!: HTMLElement
-  private controlPanelBackdropEl!: HTMLElement
   private brainBtnEl!: HTMLElement
   private tabSessions: { key: string; label: string; pct: number }[] = []
   private renderingTabs = false
@@ -276,36 +274,18 @@ export class OpenClawChatView extends ItemView {
       { passive: false }
     )
 
-    // Control panel button (left side, ClawTabs-style)
-    const controlBtn = topBar.createEl('button', {
-      cls: 'oc-control-panel-btn',
-      attr: { 'aria-label': 'Control panel' },
-    })
-    createSvgIcon(controlBtn, SVG_CONTROL_PANEL)
-    controlBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.toggleControlPanel()
-    })
-
-    // Agent switching lives in the control panel. Keep this legacy element hidden
-    // so the top-right UI matches ClawTabs' cleaner header.
+    // Agent switcher button (top-right)
     this.profileBtnEl = topBar.createDiv('openclaw-agent-btn')
-    this.profileBtnEl.addClass('oc-hidden')
     this.profileBtnEl.setAttribute('aria-label', 'Switch agent')
+    this.profileBtnEl.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.toggleAgentSwitcher()
+    })
     this.updateAgentButton()
 
     // Agent switcher dropdown (hidden by default)
     this.profileDropdownEl = container.createDiv('openclaw-agent-dropdown')
     this.profileDropdownEl.addClass('oc-hidden')
-
-    // Control panel drawer (compact Obsidian version of ClawTabs dashboard)
-    this.controlPanelBackdropEl = container.createDiv(
-      'oc-control-panel-backdrop oc-hidden'
-    )
-    this.controlPanelEl = container.createDiv('oc-control-panel oc-hidden')
-    this.controlPanelBackdropEl.addEventListener('click', () =>
-      this.closeControlPanel()
-    )
 
     // Close dropdown when clicking outside
     activeDocument.addEventListener('click', () => {
@@ -812,10 +792,14 @@ export class OpenClawChatView extends ItemView {
     }
   }
 
-  /** Update the legacy agent button. Agent switching now lives in the control panel. */
+  /** Update the agent button to show the current agent emoji. */
   private updateAgentButton(): void {
     if (!this.profileBtnEl) return
-    this.profileBtnEl.addClass('oc-hidden')
+    this.profileBtnEl.empty()
+    this.profileBtnEl.createSpan({
+      text: this.activeAgent.emoji || '🤖',
+      cls: 'openclaw-agent-emoji',
+    })
   }
 
   /** Switch to a different agent */
