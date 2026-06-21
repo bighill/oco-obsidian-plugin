@@ -53,7 +53,7 @@ export class OpenClawSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.sessionKey = value || 'main'
             await this.plugin.saveSettings()
-            this.plugin.chatView?.syncFromSettings()
+            this.plugin.broadcastToChatViews((v) => v.syncFromSettings())
           })
       )
       .addButton((btn) =>
@@ -61,7 +61,7 @@ export class OpenClawSettingTab extends PluginSettingTab {
           this.plugin.settings.sessionKey = 'main'
           await this.plugin.saveSettings()
           this.display() // refresh the settings UI
-          this.plugin.chatView?.syncFromSettings()
+          this.plugin.broadcastToChatViews((v) => v.syncFromSettings())
           new Notice('Reset to main conversation')
         })
       )
