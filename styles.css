@@ -603,8 +603,11 @@
   font-size: 12px;
 }
 .openclaw-msg-assistant a {
-  color: var(--interactive-accent);
+  color: var(--text-accent);
   text-decoration: underline;
+}
+.openclaw-msg-assistant a:hover {
+  color: var(--text-accent-hover);
 }
 .openclaw-msg-assistant blockquote {
   border-left: 2px solid var(--interactive-accent);
