@@ -479,21 +479,18 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* User messages: right-aligned, accent color */
+/* User messages: right-aligned, bordered */
 .openclaw-msg-user {
   align-self: flex-end;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background: transparent;
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
   border-bottom-right-radius: 4px;
+  padding: 9px 12px;
 }
 
 .openclaw-msg-user .openclaw-msg-text {
-  color: var(--text-on-accent);
-}
-
-.openclaw-msg-user ::selection {
-  background: rgba(255, 255, 255, 0.35);
-  color: var(--text-on-accent);
+  color: var(--text-normal);
 }
 
 /* Attached file in a user message: collapsed behind a toggle */
@@ -508,7 +505,7 @@
   -webkit-user-select: none;
   user-select: none;
   /* Match the bubble text; beat any theme's generic `summary` color rule. */
-  color: var(--text-on-accent);
+  color: var(--text-muted);
   opacity: 0.85;
   white-space: nowrap;
   overflow: hidden;
