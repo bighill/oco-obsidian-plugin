@@ -487,6 +487,7 @@
   border: 1px solid var(--background-modifier-border);
   border-bottom-right-radius: 4px;
   padding: 9px 12px;
+  margin: 3rem 0;
 }
 
 .openclaw-msg-user .openclaw-msg-text {
