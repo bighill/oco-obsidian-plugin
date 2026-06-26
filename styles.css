@@ -869,9 +869,9 @@
 
 /* ─── Bar control chips (thinking/verbose) ───────────────────────── */
 .oc-bar-sep {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 10px;
-  opacity: 0.4;
+  opacity: 0.5;
   user-select: none;
   flex-shrink: 0;
 }
@@ -880,7 +880,7 @@
   border-radius: 11px;
   border: none;
   background: var(--background-modifier-hover);
-  color: var(--text-faint);
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -896,7 +896,7 @@
 }
 .oc-bar-chip:hover {
   background: var(--background-modifier-active-hover);
-  color: var(--text-muted);
+  color: var(--text-normal);
 }
 .oc-bar-chip-active {
   background: var(--background-modifier-active-hover);
