@@ -709,6 +709,11 @@ export class OpenClawChatView extends ItemView {
     this.plugin.settings.sessionKey = 'main' // reset to main session of new agent
     await this.plugin.saveSettings()
     this.updateAgentButton()
+    // Finish any streams from the previous agent so their timers/UI don't leak over
+    for (const key of [...this.streams.keys()]) {
+      this.finishStream(key)
+    }
+    this.runToSession.clear()
     // Clear stale messages before loading the new agent's history
     this.messages = []
     this.messagesEl.empty()
