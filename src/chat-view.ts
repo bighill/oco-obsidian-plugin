@@ -218,6 +218,12 @@ export class OpenClawChatView extends ItemView {
 
   private bannerEl!: HTMLElement
 
+  // Event handlers kept for cleanup in onClose()
+  private hideDropdownHandler!: () => void
+  private touchStartHandler!: (e: TouchEvent) => void
+  private touchMoveHandler!: (e: TouchEvent) => void
+  private touchEndHandler!: () => void
+
   /** Get the session key prefix for the active agent */
   get agentPrefix(): string {
     return `agent:${this.activeAgent.id}:`
@@ -274,9 +280,10 @@ export class OpenClawChatView extends ItemView {
     this.profileDropdownEl.addClass('oc-hidden')
 
     // Close dropdown when clicking outside
-    activeDocument.addEventListener('click', () => {
+    this.hideDropdownHandler = () => {
       if (this.profileDropdownEl) this.profileDropdownEl.addClass('oc-hidden')
-    })
+    }
+    activeDocument.addEventListener('click', this.hideDropdownHandler)
 
     // We'll render tabs after loading sessions
     void this.renderTabs()
@@ -481,6 +488,28 @@ export class OpenClawChatView extends ItemView {
 
   async onClose(): Promise<void> {
     this.plugin.unregisterChatView(this)
+
+    // Remove global and element-level event listeners
+    if (this.hideDropdownHandler) {
+      activeDocument.removeEventListener('click', this.hideDropdownHandler)
+    }
+    if (this.touchStartHandler) {
+      this.messagesEl.removeEventListener('touchstart', this.touchStartHandler)
+    }
+    if (this.touchMoveHandler) {
+      this.messagesEl.removeEventListener('touchmove', this.touchMoveHandler)
+    }
+    if (this.touchEndHandler) {
+      this.messagesEl.removeEventListener('touchend', this.touchEndHandler)
+    }
+
+    // Finish any active streams so their timers don't fire after the view is gone
+    for (const key of [...this.streams.keys()]) {
+      this.finishStream(key)
+    }
+    this.runToSession.clear()
+
+    this.hidePairingBanner()
   }
 
   /** Reload the chat view when settings change externally (e.g. onboarding, settings tab) */
@@ -1520,40 +1549,37 @@ export class OpenClawChatView extends ItemView {
     let touchStartY = 0
     let pulling = false
 
-    this.messagesEl.addEventListener(
-      'touchstart',
-      (e: TouchEvent) => {
-        touchStartY = e.touches[0].clientY
+    this.touchStartHandler = (e: TouchEvent) => {
+      touchStartY = e.touches[0].clientY
+      pulling = false
+    }
+    this.messagesEl.addEventListener('touchstart', this.touchStartHandler, {
+      passive: true,
+    })
+
+    this.touchMoveHandler = (e: TouchEvent) => {
+      const deltaY = e.touches[0].clientY - touchStartY
+      if (this.messagesEl.scrollTop <= 0 && deltaY > 60) {
+        pulling = true
+      }
+    }
+    this.messagesEl.addEventListener('touchmove', this.touchMoveHandler, {
+      passive: true,
+    })
+
+    this.touchEndHandler = () => {
+      // Pull-to-refresh
+      if (pulling) {
         pulling = false
-      },
-      { passive: true }
-    )
-
-    this.messagesEl.addEventListener(
-      'touchmove',
-      (e: TouchEvent) => {
-        const deltaY = e.touches[0].clientY - touchStartY
-        if (this.messagesEl.scrollTop <= 0 && deltaY > 60) {
-          pulling = true
-        }
-      },
-      { passive: true }
-    )
-
-    this.messagesEl.addEventListener(
-      'touchend',
-      () => {
-        // Pull-to-refresh
-        if (pulling) {
-          pulling = false
-          this.messages = []
-          this.messagesEl.empty()
-          void this.loadHistory().then(() => this.updateContextMeter())
-          new Notice('Refreshed')
-        }
-      },
-      { passive: true }
-    )
+        this.messages = []
+        this.messagesEl.empty()
+        void this.loadHistory().then(() => this.updateContextMeter())
+        new Notice('Refreshed')
+      }
+    }
+    this.messagesEl.addEventListener('touchend', this.touchEndHandler, {
+      passive: true,
+    })
   }
 
   shortModelName(fullId: string): string {
