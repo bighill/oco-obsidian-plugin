@@ -63,8 +63,6 @@ export function buildToolLabel(
     }
     case 'message':
       return { label: '💬 Sending message' }
-    case 'tts':
-      return { label: '🔊 Speaking' }
     case 'sessions_spawn':
       return { label: '🤖 Spawning sub-agent' }
     default:

@@ -123,7 +123,6 @@ export interface ChatMessage {
   images: string[] // data URIs or URLs
   timestamp: number
   contentBlocks?: ContentBlock[] // raw content array from history (preserves tool_use interleaving)
-  voiceRefs?: string[] // VOICE:filename.b64 refs for audio playback via gateway
 }
 
 export interface SuggestItem {

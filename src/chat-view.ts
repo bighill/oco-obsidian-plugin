@@ -19,7 +19,6 @@ import {
   reconcileMentions,
   splitFileBlocks,
 } from './at-mention'
-import { cleanText, extractVoiceRefs, renderAudioPlayer } from './audio-player'
 import { buildToolLabel, createStreamItemEl } from './stream-ui'
 import { createSvgIcon, SVG_HOME_18, SVG_RESET_10, SVG_RESET_11 } from './svgs'
 import { generateId } from './crypto'
@@ -39,6 +38,12 @@ import type {
   ChatMessage,
   SuggestItem,
 } from './types'
+
+/** Strip non-visible assistant sentinel responses. */
+function cleanText(text: string): string {
+  if (text === 'NO_REPLY' || text === 'HEARTBEAT_OK') return ''
+  return text
+}
 
 export const VIEW_TYPE = 'openclaw-chat'
 
@@ -704,8 +709,6 @@ export class OpenClawChatView extends ItemView {
               !m.text.startsWith('HEARTBEAT')
           )
 
-        // No post-processing needed: VOICE: refs are in the assistant message text itself
-
         await this.renderMessages()
         void this.updateContextMeter()
       }
@@ -728,7 +731,7 @@ export class OpenClawChatView extends ItemView {
         if (c.type === 'text') {
           text += (text ? '\n' : '') + c.text
         } else if (c.type === 'tool_result') {
-          // Extract text from tool_result content (e.g., TTS MEDIA: paths)
+          // Extract text from tool_result content
           const trContent = c.content
           if (typeof trContent === 'string') {
             text += (text ? '\n' : '') + trContent
@@ -2157,7 +2160,6 @@ export class OpenClawChatView extends ItemView {
           // Render interleaved text + tool blocks directly
           for (const block of msg.contentBlocks) {
             if (block.type === 'text' && block.text?.trim()) {
-              const blockAudio = extractVoiceRefs(block.text)
               const cleaned = cleanText(block.text)
               // Render text bubble if there's visible text
               if (cleaned) {
@@ -2174,18 +2176,6 @@ export class OpenClawChatView extends ItemView {
                   )
                 } catch {
                   bubble.createDiv({ text: cleaned, cls: 'openclaw-msg-text' })
-                }
-                // Audio players inside text bubble
-                for (const ap of blockAudio) {
-                  renderAudioPlayer(bubble, ap, this.plugin.settings.gatewayUrl)
-                }
-              } else if (blockAudio.length > 0) {
-                // No visible text but has audio - create a bubble just for the player
-                const bubble = this.messagesEl.createDiv(
-                  'openclaw-msg openclaw-msg-assistant'
-                )
-                for (const ap of blockAudio) {
-                  renderAudioPlayer(bubble, ap, this.plugin.settings.gatewayUrl)
                 }
               }
             } else if (block.type === 'tool_use' || block.type === 'toolCall') {
@@ -2225,9 +2215,6 @@ export class OpenClawChatView extends ItemView {
           })
         }
       }
-      // Combine audio paths from message metadata + text content
-      const allAudio = msg.text ? extractVoiceRefs(msg.text) : []
-
       // Render text
       if (msg.text) {
         const displayText =
@@ -2250,20 +2237,10 @@ export class OpenClawChatView extends ItemView {
           }
         }
       }
-
-      // Render audio players for voice messages
-      for (const ap of allAudio) {
-        renderAudioPlayer(bubble, ap, this.plugin.settings.gatewayUrl)
-      }
     }
     this.scrollToBottom()
   }
 
-  /**
-   * Render a user message, collapsing any attached file blocks (from
-   * `formatTextAttachment`) behind a toggle so the history shows the mention,
-   * not the whole file. Plain text renders as before.
-   */
   private renderUserText(bubble: HTMLElement, text: string): void {
     for (const seg of splitFileBlocks(text)) {
       if (seg.type === 'text') {
