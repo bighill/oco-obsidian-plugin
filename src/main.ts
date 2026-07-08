@@ -270,10 +270,11 @@ export default class OpenClawPlugin extends Plugin {
     this.gateway.start()
   }
 
-  async openChatInNewTab(): Promise<void> {
+  async openChatInNewTab(): Promise<OpenClawChatView> {
     const leaf = this.app.workspace.getLeaf('tab')
     await leaf.setViewState({ type: VIEW_TYPE, active: true })
     this.app.workspace.setActiveLeaf(leaf, { focus: true })
+    return leaf.view as OpenClawChatView
   }
 
   async askAboutNote(): Promise<void> {
@@ -291,10 +292,7 @@ export default class OpenClawPlugin extends Plugin {
 
     let target = this.activeChatView
     if (!target) {
-      await this.openChatInNewTab()
-      // Give the view a moment to instantiate and register itself
-      await new Promise((r) => window.setTimeout(r, 50))
-      target = this.activeChatView
+      target = await this.openChatInNewTab()
     } else {
       // Focus the existing leaf
       const leaf = this.app.workspace
