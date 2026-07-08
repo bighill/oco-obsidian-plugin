@@ -18,6 +18,8 @@ Thanks for contributing. Note this is a fork of [`oscarhenrycollins/obsidianclaw
    npm run build
    ```
 
+> **Note:** Do not commit your local `.obsidian/plugins/openclaw/` folder (especially `data.json`, which contains your gateway token and device private key). Add `.obsidian/plugins/` to your vault's `.gitignore` if your vault is under version control.
+
 ## Validation Before PR
 
 Run all checks before opening a pull request:

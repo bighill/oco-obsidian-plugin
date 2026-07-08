@@ -63,6 +63,11 @@ This plugin is **not** published to the Obsidian community store — install it 
 
 See [Building from Source](#building-from-source) below.
 
+## Security & Privacy
+
+- **Do not track `.obsidian/plugins/` in git.** The plugin stores your gateway auth token and Ed25519 device private key in `.obsidian/plugins/openclaw/data.json`. If your vault is under version control, keep plugin data out of it.
+- See [SECURITY.md](SECURITY.md) for the full threat model and recommendations.
+
 ## Connect
 
 After install, a welcome notice prompts you to configure the connection:

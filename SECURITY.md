@@ -71,6 +71,8 @@ OcO Plugin  ←→  localhost / private tunnel  ←→  OpenClaw Gateway
 
 Because these values live in the vault's plugin data directory, they are included in **Obsidian Sync**, manual vault backups, and any other sync/copy mechanism that covers the vault. They are **not encrypted at rest** by the plugin. Keep this in mind when enabling sync or sharing vault backups.
 
+**If your vault is under version control, do not track `.obsidian/plugins/` in git.** Add it to your vault's `.gitignore` so the token and private key never end up in commit history.
+
 ### What's sent to the gateway:
 - Auth token (for authentication)
 - Public key + signature (for device verification)
