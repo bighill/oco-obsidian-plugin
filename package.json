@@ -1,0 +1,38 @@
+{
+  "name": "oco-obsidian-plugin",
+  "version": "0.42.0",
+  "description": "OcO — OpenClaw chat sidebar for Obsidian",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "lint": "eslint src/**/*.ts --max-warnings=0",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test 'src/**/*.test.ts'",
+    "test:watch": "node --import tsx --test --watch \"**/*.test.ts\""
+  },
+  "keywords": [
+    "obsidian",
+    "openclaw",
+    "ai",
+    "agent",
+    "chat",
+    "oco"
+  ],
+  "author": "bighill",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.39.3",
+    "eslint-plugin-obsidianmd": "^0.3.0",
+    "obsidian": "^1.12.3",
+    "prettier": "^3.5.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3"
+  }
+}
