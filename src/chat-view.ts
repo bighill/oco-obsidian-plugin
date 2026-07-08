@@ -175,11 +175,6 @@ export class OpenClawChatView extends ItemView {
     return this.streams.get(this.sessionKey) ?? null
   }
 
-  private contextMeterEl!: HTMLElement
-  private contextFillEl!: HTMLElement
-  private contextLabelEl!: HTMLElement
-  modelLabelEl!: HTMLElement
-
   currentModel: string = ''
   currentModelSetAt: number = 0 // timestamp to prevent stale overwrites
   cachedSessionDisplayName: string = ''
@@ -285,13 +280,6 @@ export class OpenClawChatView extends ItemView {
 
     // We'll render tabs after loading sessions
     void this.renderTabs()
-
-    // Hidden elements for compatibility
-
-    this.contextMeterEl = createDiv()
-    this.contextFillEl = createDiv()
-    this.contextLabelEl = createSpan()
-    this.modelLabelEl = createDiv()
 
     // Status banner (compaction, etc.) - hidden by default
     this.bannerEl = container.createDiv('openclaw-banner')
@@ -1007,15 +995,6 @@ export class OpenClawChatView extends ItemView {
       const used = session.totalTokens || 0
       const max = session.contextTokens || 200000
       const pct = Math.min(100, Math.round((used / max) * 100))
-      this.contextFillEl.setCssStyles({ width: pct + '%' })
-      this.contextFillEl.className =
-        'openclaw-context-fill' +
-        (pct > 80
-          ? ' openclaw-context-high'
-          : pct > 60
-            ? ' openclaw-context-mid'
-            : '')
-      this.contextLabelEl.textContent = `${pct}%`
       // Update active tab meter bar
       const activeFill = this.tabBarEl?.querySelector(
         '.openclaw-tab.active .openclaw-tab-meter-fill'
@@ -1075,17 +1054,6 @@ export class OpenClawChatView extends ItemView {
     const model = this.currentModel
       ? this.shortModelName(this.currentModel)
       : 'model'
-    if (this.modelLabelEl) {
-      this.modelLabelEl.empty()
-      this.modelLabelEl.createSpan({
-        text: model,
-        cls: 'openclaw-ctx-pill-text',
-      })
-      this.modelLabelEl.createSpan({
-        text: ' ▾',
-        cls: 'openclaw-ctx-pill-arrow',
-      })
-    }
     if (this.brainBtnEl) {
       this.brainBtnEl.empty()
       this.brainBtnEl.appendText(model)
@@ -2260,19 +2228,6 @@ export class OpenClawChatView extends ItemView {
       this.typingEl.removeClass('oc-hidden')
     }
 
-    this.scrollToBottom()
-  }
-
-  private insertStreamItemsBeforeLastAssistant(items: StreamItem[]): void {
-    if (items.length === 0) return
-    const bubbles = this.messagesEl.querySelectorAll('.openclaw-msg-assistant')
-    const lastBubble = bubbles[bubbles.length - 1]
-    if (!lastBubble) return
-
-    for (const item of items) {
-      const el = this.createStreamItemEl(item)
-      lastBubble.parentElement?.insertBefore(el, lastBubble)
-    }
     this.scrollToBottom()
   }
 

@@ -303,58 +303,8 @@
   font-style: italic;
 }
 
-/* Legacy context bar (hidden, used for internal tracking) */
-.openclaw-context-bar {
+.openclaw-chat-header {
   display: none;
-}
-.openclaw-model-label {
-  font-size: 9px;
-  color: var(--text-faint);
-  white-space: nowrap;
-  line-height: 14px;
-}
-.openclaw-context-meter {
-  flex: 1;
-  height: 3px;
-  background: var(--background-modifier-border);
-  border-radius: 1.5px;
-  overflow: hidden;
-  min-width: 40px;
-}
-.openclaw-context-fill {
-  height: 100%;
-  background: var(--interactive-accent);
-  transition: width 1.2s ease, background 0.3s;
-  width: 0%;
-}
-.openclaw-context-fill.openclaw-context-mid { background: var(--color-yellow); }
-.openclaw-context-fill.openclaw-context-high { background: var(--color-red); }
-.openclaw-context-label {
-  font-size: 9px;
-  color: var(--text-faint);
-  font-weight: 500;
-  white-space: nowrap;
-  min-width: 22px;
-}
-.openclaw-context-btn {
-  font-size: 9px;
-  padding: 0px 7px;
-  height: 14px;
-  line-height: 14px;
-  border-radius: 8px;
-  border: none;
-  background: var(--background-modifier-hover);
-  color: var(--text-muted);
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s;
-}
-.openclaw-context-btn:hover {
-  background: var(--background-modifier-active-hover);
-  color: var(--text-muted);
-}
-.openclaw-context-btn:active {
-  transform: scale(0.95);
 }
 
 /* Confirm modal */
@@ -417,11 +367,6 @@
   overflow: hidden;
   padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-
-/* Header: minimal inline bar */
-.openclaw-chat-header {
-  display: none;
 }
 
 .openclaw-send-wrapper {
@@ -1262,40 +1207,6 @@
   cursor: default;
 }
 
-
-/* ─── Context Bar Pills ──────────────────────────────────────────── */
-
-.openclaw-ctx-pill {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 0 7px;
-  height: 16px;
-  border-radius: 8px;
-  background: var(--background-modifier-hover);
-  cursor: pointer;
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.openclaw-ctx-pill:hover {
-  background: var(--background-modifier-active-hover);
-}
-.openclaw-ctx-pill-text {
-  font-size: 9px;
-  color: var(--text-muted);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
-}
-
-.openclaw-ctx-pill-arrow {
-  font-size: 7px;
-  color: var(--text-faint);
-  line-height: 1;
-  flex-shrink: 0;
-}
 
 /* ─── Picker Modals (Session + Model) ────────────────────────────── */
 
