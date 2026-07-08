@@ -19,9 +19,12 @@ import {
   reconcileMentions,
   splitFileBlocks,
 } from './at-mention'
+import { cleanText, extractVoiceRefs, renderAudioPlayer } from './audio-player'
+import { buildToolLabel, createStreamItemEl } from './stream-ui'
 import { createSvgIcon, SVG_HOME_18, SVG_RESET_10, SVG_RESET_11 } from './svgs'
 import { generateId } from './crypto'
 import { deleteSessionWithFallback } from './gateway-client'
+import { InlineSuggest } from './inline-suggest'
 import { ConfirmCloseModal } from './modals'
 import { ModelPickerModal } from './model-picker-modal'
 import type OpenClawPlugin from './main'
@@ -36,94 +39,6 @@ import type {
   ChatMessage,
   SuggestItem,
 } from './types'
-
-class InlineSuggest {
-  private containerEl: HTMLElement
-  private listEl: HTMLElement
-  private items: SuggestItem[] = []
-  private selectedIndex = 0
-  private open = false
-  /** Called when the user picks an item (click or Enter). */
-  onChoose: (item: SuggestItem) => void = () => {}
-
-  constructor(host: HTMLElement) {
-    this.containerEl = host.createDiv('openclaw-suggest')
-    this.containerEl.addClass('oc-hidden')
-    this.listEl = this.containerEl.createDiv('openclaw-suggest-list')
-  }
-
-  get isOpen(): boolean {
-    return this.open
-  }
-
-  /** Show the dropdown with a fresh set of items (resets the highlight). */
-  show(items: SuggestItem[]): void {
-    this.items = items
-    this.selectedIndex = 0
-    this.open = true
-    this.containerEl.removeClass('oc-hidden')
-    this.render()
-  }
-
-  /** Replace items while staying open (keeps the highlight in range). */
-  update(items: SuggestItem[]): void {
-    this.items = items
-    this.selectedIndex = Math.min(
-      this.selectedIndex,
-      Math.max(0, items.length - 1)
-    )
-    this.render()
-  }
-
-  close(): void {
-    this.open = false
-    this.items = []
-    this.containerEl.addClass('oc-hidden')
-    this.listEl.empty()
-  }
-
-  /** Move the highlight by delta, wrapping around the list. */
-  moveSelection(delta: number): void {
-    if (this.items.length === 0) return
-    const n = this.items.length
-    this.selectedIndex = (this.selectedIndex + delta + n) % n
-    this.render()
-  }
-
-  /** Return the highlighted item without closing. */
-  current(): SuggestItem | null {
-    return this.items[this.selectedIndex] ?? null
-  }
-
-  private render(): void {
-    this.listEl.empty()
-    if (this.items.length === 0) {
-      this.listEl.createDiv({
-        cls: 'openclaw-suggest-empty',
-        text: 'No matching files',
-      })
-      return
-    }
-    this.items.forEach((item, i) => {
-      const row = this.listEl.createDiv('openclaw-suggest-item')
-      if (i === this.selectedIndex) row.addClass('is-selected')
-      const slash = item.display.lastIndexOf('/')
-      const name = slash >= 0 ? item.display.slice(slash + 1) : item.display
-      const dir = slash >= 0 ? item.display.slice(0, slash + 1) : ''
-      row.createSpan({ cls: 'openclaw-suggest-name', text: name })
-      if (dir) row.createSpan({ cls: 'openclaw-suggest-path', text: dir })
-      row.addEventListener('mousedown', (e) => {
-        // mousedown (not click) so the textarea doesn't blur first
-        e.preventDefault()
-        this.onChoose(item)
-      })
-      row.addEventListener('mouseenter', () => {
-        this.selectedIndex = i
-        this.render()
-      })
-    })
-  }
-}
 
 export const VIEW_TYPE = 'openclaw-chat'
 
@@ -1858,76 +1773,6 @@ export class OpenClawChatView extends ItemView {
     }
   }
 
-  private buildToolLabel(
-    toolName: string,
-    args: Record<string, unknown> | undefined
-  ): { label: string; url?: string } {
-    const a = args ?? {}
-    switch (toolName) {
-      case 'exec': {
-        const cmd = str(a?.command)
-        const short = cmd.length > 60 ? cmd.slice(0, 60) + '...' : cmd
-        return { label: `🔧 ${short || 'Running command'}` }
-      }
-      case 'read':
-      case 'Read': {
-        const p = str(a?.path, str(a?.file_path))
-        const name = p.split('/').pop() || 'file'
-        return { label: `📄 Reading ${name}` }
-      }
-      case 'write':
-      case 'Write': {
-        const p = str(a?.path, str(a?.file_path))
-        const name = p.split('/').pop() || 'file'
-        return { label: `✏️ Writing ${name}` }
-      }
-      case 'edit':
-      case 'Edit': {
-        const p = str(a?.path, str(a?.file_path))
-        const name = p.split('/').pop() || 'file'
-        return { label: `✏️ Editing ${name}` }
-      }
-      case 'web_search': {
-        const q = str(a?.query)
-        return {
-          label: `🔍 Searching "${q.length > 40 ? q.slice(0, 40) + '...' : q}"`,
-        }
-      }
-      case 'web_fetch': {
-        const rawUrl = str(a?.url)
-        const safeUrl = safeGatewayUrl(rawUrl)
-        const domain = safeUrl ? new URL(safeUrl).hostname : ''
-        return {
-          label: `🌐 Fetching ${domain || 'page'}`,
-          url: safeUrl || undefined,
-        }
-      }
-      case 'browser':
-        return { label: '🌐 Using browser' }
-      case 'image':
-        return { label: '👁️ Viewing image' }
-      case 'memory_search': {
-        const q = str(a?.query)
-        return {
-          label: `🧠 Searching "${q.length > 40 ? q.slice(0, 40) + '...' : q}"`,
-        }
-      }
-      case 'memory_get': {
-        const p = str(a?.path)
-        const name = p.split('/').pop() || 'memory'
-        return { label: `🧠 Reading ${name}` }
-      }
-      case 'message':
-        return { label: '💬 Sending message' }
-      case 'tts':
-        return { label: '🔊 Speaking' }
-      case 'sessions_spawn':
-        return { label: '🤖 Spawning sub-agent' }
-      default:
-        return { label: toolName ? `⚡ ${toolName}` : 'Working' }
-    }
-  }
-
   private appendToolCall(label: string, url?: string, active = false): void {
     const el = createDiv({
       cls: 'openclaw-tool-item' + (active ? ' openclaw-tool-active' : ''),
@@ -2073,7 +1918,7 @@ export class OpenClawChatView extends ItemView {
       if (ss.text) {
         ss.splitPoints.push(ss.text.length)
       }
-      const { label, url } = this.buildToolLabel(
+      const { label, url } = buildToolLabel(
         toolName,
         (payloadData?.args || payload.args) as
           Record<string, unknown> | undefined
@@ -2262,153 +2107,6 @@ export class OpenClawChatView extends ItemView {
     this.scrollToBottom()
   }
 
-  private createStreamItemEl(item: StreamItem): HTMLElement {
-    if (item.type === 'tool') {
-      const el = createDiv({ cls: 'openclaw-tool-item' })
-      const safeUrl = item.url ? safeGatewayUrl(item.url) : null
-      if (safeUrl) {
-        const link = el.createEl('a', {
-          text: item.label,
-          href: safeUrl,
-          cls: 'openclaw-tool-link',
-        })
-        link.addEventListener('click', (e) => {
-          e.preventDefault()
-          window.open(safeUrl, '_blank')
-        })
-      } else {
-        el.textContent = item.label
-      }
-      return el
-    } else {
-      const details = createEl('details', { cls: 'openclaw-intermediary' })
-      const summary = createEl('summary', {
-        cls: 'openclaw-intermediary-summary',
-      })
-      const preview =
-        item.text.length > 60 ? item.text.slice(0, 60) + '...' : item.text
-      summary.textContent = preview
-      details.appendChild(summary)
-      const content = createDiv({ cls: 'openclaw-intermediary-content' })
-      content.textContent = item.text
-      details.appendChild(content)
-      return details
-    }
-  }
-
-  private cleanText(text: string): string {
-    // Remove TTS/audio directives and refs that are rendered as audio players.
-    text = text.replace(/^\[\[audio_as_voice\]\]\s*/gm, '').trim()
-    text = text.replace(/^MEDIA:.*$/gm, '').trim()
-    text = text.replace(/^VOICE:[^\s\n]+$/gm, '').trim()
-    text = text.replace(/^AUDIO_DATA:.*$/gm, '').trim()
-    if (text === '🎤 Voice message') text = '🎤 Voice message' // keep the label
-    if (text === 'NO_REPLY' || text === 'HEARTBEAT_OK') return ''
-    return text
-  }
-
-  /** Extract VOICE:path references from message text */
-  private extractVoiceRefs(text: string): string[] {
-    const refs: string[] = []
-    const re = /^VOICE:([^\s\n]+\.(?:mp3|opus|ogg|wav|m4a|mp4))$/gm
-    let match: RegExpExecArray | null
-    while ((match = re.exec(text)) !== null) {
-      refs.push(match[1].trim())
-    }
-    return refs
-  }
-
-  /** Build HTTP URL for a voice file served by the gateway */
-  private buildVoiceUrl(voicePath: string): string {
-    // Gateway URL is ws:// or wss:// - convert to http:// or https://
-    const gwUrl = this.plugin.settings.gatewayUrl || ''
-    const httpUrl = gwUrl
-      .replace(/^ws(s?):\/\//, 'http$1://')
-      .replace(/\/$/, '')
-    const path = voicePath.startsWith('/') ? voicePath.slice(1) : voicePath
-    return `${httpUrl}/${path}`
-  }
-
-  /** Render an inline audio player that fetches audio via gateway HTTP */
-  private renderAudioPlayer(container: HTMLElement, voiceRef: string): void {
-    const playerEl = container.createDiv('openclaw-audio-player')
-    const playBtn = playerEl.createEl('button', {
-      cls: 'openclaw-audio-play-btn',
-      text: '▶ voice message',
-    })
-    const progressEl = playerEl.createDiv('openclaw-audio-progress')
-    const barEl = progressEl.createDiv('openclaw-audio-bar')
-
-    let audio: HTMLAudioElement | null = null
-
-    playBtn.addEventListener(
-      'click',
-      () =>
-        void (async () => {
-          if (audio && !audio.paused) {
-            audio.pause()
-            playBtn.textContent = '▶ voice message'
-            return
-          }
-
-          if (!audio) {
-            playBtn.textContent = '⏳ loading...'
-            try {
-              const url = this.buildVoiceUrl(voiceRef)
-              console.debug('[OcO] Loading audio from:', url)
-              audio = new Audio(url)
-
-              await new Promise<void>((resolve, reject) => {
-                const timer = window.setTimeout(
-                  () => reject(new Error('timeout')),
-                  10000
-                )
-                audio!.addEventListener(
-                  'canplaythrough',
-                  () => {
-                    window.clearTimeout(timer)
-                    resolve()
-                  },
-                  { once: true }
-                )
-                audio!.addEventListener(
-                  'error',
-                  () => {
-                    window.clearTimeout(timer)
-                    reject(new Error('load error'))
-                  },
-                  { once: true }
-                )
-                audio!.load()
-              })
-
-              audio.addEventListener('timeupdate', () => {
-                if (audio && audio.duration)
-                  barEl.setCssStyles({
-                    width: `${(audio.currentTime / audio.duration) * 100}%`,
-                  })
-              })
-              audio.addEventListener('ended', () => {
-                playBtn.textContent = '▶ voice message'
-                barEl.setCssStyles({ width: '0%' })
-              })
-            } catch (e) {
-              console.error('[OcO] Audio load failed:', e)
-              playBtn.textContent = '⚠ audio unavailable'
-              playBtn.disabled = true
-              return
-            }
-          }
-
-          playBtn.textContent = '⏸ playing...'
-          audio.play().catch(() => {
-            playBtn.textContent = '⚠ audio unavailable'
-            playBtn.disabled = true
-          })
-        })()
-    )
-  }
-
   private extractDeltaText(
     msg: Record<string, unknown> | string | undefined
   ): string {
@@ -2459,8 +2157,8 @@ export class OpenClawChatView extends ItemView {
           // Render interleaved text + tool blocks directly
           for (const block of msg.contentBlocks) {
             if (block.type === 'text' && block.text?.trim()) {
-              const blockAudio = this.extractVoiceRefs(block.text)
-              const cleaned = this.cleanText(block.text)
+              const blockAudio = extractVoiceRefs(block.text)
+              const cleaned = cleanText(block.text)
               // Render text bubble if there's visible text
               if (cleaned) {
                 const bubble = this.messagesEl.createDiv(
@@ -2479,7 +2177,7 @@ export class OpenClawChatView extends ItemView {
                 }
                 // Audio players inside text bubble
                 for (const ap of blockAudio) {
-                  this.renderAudioPlayer(bubble, ap)
+                  renderAudioPlayer(bubble, ap, this.plugin.settings.gatewayUrl)
                 }
               } else if (blockAudio.length > 0) {
                 // No visible text but has audio - create a bubble just for the player
@@ -2487,15 +2185,15 @@ export class OpenClawChatView extends ItemView {
                   'openclaw-msg openclaw-msg-assistant'
                 )
                 for (const ap of blockAudio) {
-                  this.renderAudioPlayer(bubble, ap)
+                  renderAudioPlayer(bubble, ap, this.plugin.settings.gatewayUrl)
                 }
               }
             } else if (block.type === 'tool_use' || block.type === 'toolCall') {
-              const { label, url } = this.buildToolLabel(
+              const { label, url } = buildToolLabel(
                 block.name || '',
                 block.input || block.arguments || {}
               )
-              const el = this.createStreamItemEl({
+              const el = createStreamItemEl({
                 type: 'tool',
                 label,
                 url,
@@ -2528,12 +2226,12 @@ export class OpenClawChatView extends ItemView {
         }
       }
       // Combine audio paths from message metadata + text content
-      const allAudio = msg.text ? this.extractVoiceRefs(msg.text) : []
+      const allAudio = msg.text ? extractVoiceRefs(msg.text) : []
 
       // Render text
       if (msg.text) {
         const displayText =
-          msg.role === 'assistant' ? this.cleanText(msg.text) : msg.text
+          msg.role === 'assistant' ? cleanText(msg.text) : msg.text
         if (displayText) {
           if (msg.role === 'assistant') {
             try {
@@ -2555,7 +2253,7 @@ export class OpenClawChatView extends ItemView {
 
       // Render audio players for voice messages
       for (const ap of allAudio) {
-        this.renderAudioPlayer(bubble, ap)
+        renderAudioPlayer(bubble, ap, this.plugin.settings.gatewayUrl)
       }
     }
     this.scrollToBottom()
