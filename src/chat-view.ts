@@ -383,9 +383,11 @@ export class OpenClawChatView extends ItemView {
         if (e.key === 'Enter') {
           const item = this.slashSuggest.current()
           if (item) {
-            // Replace /query with /prompt-name, close dropdown, fall through to send.
+            // Select the prompt name into the input but don't send yet —
+            // same as Tab. User hits Enter again to send.
+            e.preventDefault()
             this.selectPrompt(item)
-            // Don't return — fall through to the send handler below
+            return
           }
         }
       }
