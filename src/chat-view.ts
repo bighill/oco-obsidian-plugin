@@ -372,13 +372,16 @@ export class OpenClawChatView extends ItemView {
           this.closeSlashSuggest()
           return
         }
-        if (e.key === 'Enter' || e.key === 'Tab') {
-          const item = this.slashSuggest.current()
-          if (item) {
-            e.preventDefault()
-            void this.choosePrompt(item)
-            return
-          }
+        if (e.key === 'Tab') {
+          e.preventDefault()
+          this.closeSlashSuggest()
+          return
+        }
+        if (e.key === 'Enter') {
+          // Close the dropdown but let Enter fall through to send.
+          // The /name text stays in the input and gets expanded at submit.
+          this.closeSlashSuggest()
+          // Don't return — fall through to the send handler below
         }
       }
       if (e.key === 'Enter') {
@@ -1647,15 +1650,11 @@ export class OpenClawChatView extends ItemView {
       }))
   }
 
-  /** Handle a prompt chosen from the slash-command dropdown. */
+  /** Handle a prompt chosen from the slash-command dropdown (mouse click). */
   private async choosePrompt(_item: SuggestItem): Promise<void> {
     this.closeSlashSuggest()
-    // Leave the `/name` text in the input — expansion happens at submit time.
-    // Place cursor right after the command so the user can type arguments.
-    const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length
-    this.inputEl.setSelectionRange(cursor, cursor)
-    this.autoResize()
-    this.updateSendButton()
+    // Keep focus in the textarea so the user can hit Enter to send.
+    this.inputEl.focus()
   }
 
   /**
