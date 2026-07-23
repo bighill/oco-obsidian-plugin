@@ -26,6 +26,12 @@ import { deleteSessionWithFallback } from './gateway-client'
 import { InlineSuggest } from './inline-suggest'
 import { ConfirmCloseModal } from './modals'
 import { ModelPickerModal } from './model-picker-modal'
+import {
+  loadPrompts,
+  detectSlashCommand,
+  insertPrompt,
+  type SavedPrompt,
+} from './prompt-loader'
 import type OpenClawPlugin from './main'
 import type {
   StreamItem,
@@ -121,6 +127,9 @@ export class OpenClawChatView extends ItemView {
   private attachPreviewEl!: HTMLElement
   private suggest!: InlineSuggest
   private activeMention: { query: string; start: number } | null = null
+  private slashSuggest!: InlineSuggest
+  private activeSlash: { query: string; start: number } | null = null
+  private savedPrompts: SavedPrompt[] = []
   private fileInputEl!: HTMLInputElement
   // `inline`/`token`: @-mention attachments shown as inline text (no chip). The
   // token is the exact `@path` string inserted; if it's gone from the textarea,
@@ -292,6 +301,9 @@ export class OpenClawChatView extends ItemView {
     // @-mention file picker dropdown (anchored to the input area)
     this.suggest = new InlineSuggest(inputArea)
     this.suggest.onChoose = (item) => void this.chooseMention(item)
+    // Slash-command saved prompts dropdown
+    this.slashSuggest = new InlineSuggest(inputArea)
+    this.slashSuggest.onChoose = (item) => void this.choosePrompt(item)
     this.abortBtn = inputRow.createEl('button', {
       cls: 'openclaw-abort-btn',
       attr: { 'aria-label': 'Stop' },
@@ -344,6 +356,32 @@ export class OpenClawChatView extends ItemView {
           }
         }
       }
+      // Slash-command dropdown captures navigation keys while open
+      if (this.slashSuggest.isOpen) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          this.slashSuggest.moveSelection(1)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          this.slashSuggest.moveSelection(-1)
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          this.closeSlashSuggest()
+          return
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          const item = this.slashSuggest.current()
+          if (item) {
+            e.preventDefault()
+            void this.choosePrompt(item)
+            return
+          }
+        }
+      }
       if (e.key === 'Enter') {
         // Mobile: Enter always creates new line (use send button to send)
         // Desktop: Enter sends, Shift+Enter creates new line
@@ -361,10 +399,12 @@ export class OpenClawChatView extends ItemView {
       this.autoResize()
       this.updateSendButton()
       this.updateMentionSuggest()
+      void this.updateSlashSuggest()
       this.reconcileInlineMentions()
     })
     this.inputEl.addEventListener('blur', () => {
       if (this.suggest.isOpen) this.closeMentionSuggest()
+      if (this.slashSuggest.isOpen) this.closeSlashSuggest()
     })
     this.inputEl.addEventListener('focus', () => {
       window.setTimeout(() => {
@@ -1547,6 +1587,93 @@ export class OpenClawChatView extends ItemView {
   private closeMentionSuggest(): void {
     this.activeMention = null
     this.suggest.close()
+  }
+
+  // ─── Slash-command saved prompts ─────────────────────────────────
+
+  /** Recompute the slash-command dropdown from the current caret position. */
+  private async updateSlashSuggest(): Promise<void> {
+    const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length
+    const slash = detectSlashCommand(this.inputEl.value, cursor)
+    if (!slash) {
+      this.closeSlashSuggest()
+      return
+    }
+    this.activeSlash = slash
+    // Refresh prompts from disk each time the dropdown opens
+    if (this.savedPrompts.length === 0 || slash.query.length === 0) {
+      this.savedPrompts = await loadPrompts(this.app.vault)
+    }
+    const items = this.slashPromptItems(slash.query)
+    if (items.length === 0) {
+      this.closeSlashSuggest()
+      return
+    }
+    if (this.slashSuggest.isOpen) this.slashSuggest.update(items)
+    else this.slashSuggest.show(items)
+  }
+
+  private closeSlashSuggest(): void {
+    this.activeSlash = null
+    this.slashSuggest.close()
+  }
+
+  /** Filter saved prompts by fuzzy-matching name + description. */
+  private slashPromptItems(query: string): SuggestItem[] {
+    if (!query) {
+      return this.savedPrompts.map((p) => ({
+        path: p.name,
+        display: `/${p.name}`,
+        description: p.description,
+        argumentHint: p.argumentHint,
+      }))
+    }
+    const matcher = prepareFuzzySearch(query)
+    return this.savedPrompts
+      .map((p) => {
+        const result = matcher(`${p.name} ${p.description}`)
+        return { prompt: p, score: result ? result.score : null }
+      })
+      .filter((x) => x.score !== null)
+      .sort((a, b) => b.score! - a.score!)
+      .slice(0, 50)
+      .map((x) => ({
+        path: x.prompt.name,
+        display: `/${x.prompt.name}`,
+        description: x.prompt.description,
+        argumentHint: x.prompt.argumentHint,
+      }))
+  }
+
+  /** Handle a prompt chosen from the slash-command dropdown. */
+  private async choosePrompt(item: SuggestItem): Promise<void> {
+    const slash = this.activeSlash
+    this.closeSlashSuggest()
+    if (!slash) return
+
+    const prompt = this.savedPrompts.find((p) => p.name === item.path)
+    if (!prompt) return
+
+    // Extract any args typed after the command name
+    const fullCmd = this.inputEl.value.slice(
+      slash.start,
+      this.inputEl.selectionStart ?? this.inputEl.value.length
+    )
+    // `/name args...` — split on first space after the command
+    const spaceIdx = fullCmd.indexOf(' ')
+    const args = spaceIdx >= 0 ? fullCmd.slice(spaceIdx + 1).trim() : ''
+
+    const { value, caret } = insertPrompt(
+      this.inputEl.value,
+      slash.start,
+      slash.query.length,
+      prompt.body,
+      args
+    )
+    this.inputEl.value = value
+    this.inputEl.setSelectionRange(caret, caret)
+    this.autoResize()
+    this.updateSendButton()
   }
 
   /** Rank vault files for the dropdown, using Obsidian fuzzy search when querying. */

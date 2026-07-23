@@ -128,4 +128,8 @@ export interface ChatMessage {
 export interface SuggestItem {
   path: string
   display: string
+  /** Optional description shown in the dropdown (used by slash commands). */
+  description?: string
+  /** Optional argument hint shown in the dropdown (used by slash commands). */
+  argumentHint?: string
 }

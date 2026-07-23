@@ -75,6 +75,13 @@ export class InlineSuggest {
       const dir = slash >= 0 ? item.display.slice(0, slash + 1) : ''
       row.createSpan({ cls: 'openclaw-suggest-name', text: name })
       if (dir) row.createSpan({ cls: 'openclaw-suggest-path', text: dir })
+      // Optional description (used by slash-command prompts)
+      if (item.description) {
+        row.createSpan({
+          cls: 'openclaw-suggest-desc',
+          text: item.description,
+        })
+      }
       row.addEventListener('mousedown', (e) => {
         // mousedown (not click) so the textarea doesn't blur first
         e.preventDefault()
