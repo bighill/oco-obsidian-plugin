@@ -357,6 +357,7 @@ export class OpenClawChatView extends ItemView {
       }
       // Slash-command dropdown captures navigation keys while open
       if (this.slashSuggest.isOpen) {
+        console.debug('[oco] slashSuggest is open, key:', e.key)
         if (e.key === 'ArrowDown') {
           e.preventDefault()
           this.slashSuggest.moveSelection(1)
@@ -1600,6 +1601,10 @@ export class OpenClawChatView extends ItemView {
   private async updateSlashSuggest(): Promise<void> {
     const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length
     const slash = detectSlashCommand(this.inputEl.value, cursor)
+    console.debug(
+      '[oco] updateSlashSuggest:',
+      slash ? `query="${slash.query}" start=${slash.start}` : 'null'
+    )
     if (!slash) {
       this.closeSlashSuggest()
       return
@@ -1652,6 +1657,7 @@ export class OpenClawChatView extends ItemView {
 
   /** Handle a prompt chosen from the slash-command dropdown (mouse click). */
   private async choosePrompt(_item: SuggestItem): Promise<void> {
+    console.debug('[oco] choosePrompt called')
     this.closeSlashSuggest()
     // Keep focus in the textarea so the user can hit Enter to send.
     this.inputEl.focus()
