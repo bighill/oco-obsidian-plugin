@@ -443,6 +443,7 @@
 
 .openclaw-msg-user .openclaw-msg-text {
   color: var(--text-normal);
+  white-space: pre-wrap;
 }
 
 /* Attached file in a user message: collapsed behind a toggle */
