@@ -537,16 +537,7 @@
   font-size: 14px;
   font-weight: 600;
 }
-.openclaw-msg-assistant code {
-  color: var(--code-normal);
-  font-family: var(--font-monospace);
-  background-color: var(--code-background);
-  border-radius: var(--code-radius);
-  font-size: var(--code-size);
-  padding: 0.15em 0.3em;
-  border: var(--code-border-width) solid var(--code-border-color);
-  -webkit-box-decoration-break: clone;
-}
+/* Inline code: handled by Obsidian's MarkdownRenderer — no override needed */
 .openclaw-msg-assistant pre {
   margin: 6px 0;
   padding: 8px 10px;
