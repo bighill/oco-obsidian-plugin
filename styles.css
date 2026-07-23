@@ -565,6 +565,24 @@
   color: var(--text-muted);
 }
 
+/* Tables in assistant messages */
+.openclaw-msg-assistant table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 6px 0;
+  font-size: 13px;
+}
+.openclaw-msg-assistant th,
+.openclaw-msg-assistant td {
+  border: 1px solid var(--table-border-color, var(--background-modifier-border));
+  padding: 4px 8px;
+  text-align: left;
+}
+.openclaw-msg-assistant th {
+  font-weight: 600;
+  background: var(--background-secondary);
+}
+
 /* Tool call items (always visible, persistent) */
 .openclaw-tool-item {
   font-size: 11px;
