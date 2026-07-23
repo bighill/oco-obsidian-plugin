@@ -2195,7 +2195,9 @@ export class OpenClawChatView extends ItemView {
         }
       }
       const cls =
-        msg.role === 'user' ? 'openclaw-msg-user' : 'openclaw-msg-assistant markdown-rendered'
+        msg.role === 'user'
+          ? 'openclaw-msg-user'
+          : 'openclaw-msg-assistant markdown-rendered'
       const bubble = this.messagesEl.createDiv(`openclaw-msg ${cls}`)
       // Render images
       if (msg.images && msg.images.length > 0) {
