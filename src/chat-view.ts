@@ -302,7 +302,7 @@ export class OpenClawChatView extends ItemView {
     this.suggest.onChoose = (item) => void this.chooseMention(item)
     // Slash-command saved prompts dropdown
     this.slashSuggest = new InlineSuggest(inputArea)
-    this.slashSuggest.onChoose = (item) => void this.choosePrompt(item)
+    this.slashSuggest.onChoose = (item) => this.selectPrompt(item)
     this.abortBtn = inputRow.createEl('button', {
       cls: 'openclaw-abort-btn',
       attr: { 'aria-label': 'Stop' },
@@ -357,7 +357,6 @@ export class OpenClawChatView extends ItemView {
       }
       // Slash-command dropdown captures navigation keys while open
       if (this.slashSuggest.isOpen) {
-        console.debug('[oco] slashSuggest is open, key:', e.key)
         if (e.key === 'ArrowDown') {
           e.preventDefault()
           this.slashSuggest.moveSelection(1)
@@ -374,15 +373,20 @@ export class OpenClawChatView extends ItemView {
           return
         }
         if (e.key === 'Tab') {
-          e.preventDefault()
-          this.closeSlashSuggest()
-          return
+          const item = this.slashSuggest.current()
+          if (item) {
+            e.preventDefault()
+            this.selectPrompt(item)
+            return
+          }
         }
         if (e.key === 'Enter') {
-          // Close the dropdown but let Enter fall through to send.
-          // The /name text stays in the input and gets expanded at submit.
-          this.closeSlashSuggest()
-          // Don't return — fall through to the send handler below
+          const item = this.slashSuggest.current()
+          if (item) {
+            // Replace /query with /prompt-name, close dropdown, fall through to send.
+            this.selectPrompt(item)
+            // Don't return — fall through to the send handler below
+          }
         }
       }
       if (e.key === 'Enter') {
@@ -1601,10 +1605,6 @@ export class OpenClawChatView extends ItemView {
   private async updateSlashSuggest(): Promise<void> {
     const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length
     const slash = detectSlashCommand(this.inputEl.value, cursor)
-    console.debug(
-      '[oco] updateSlashSuggest:',
-      slash ? `query="${slash.query}" start=${slash.start}` : 'null'
-    )
     if (!slash) {
       this.closeSlashSuggest()
       return
@@ -1655,12 +1655,27 @@ export class OpenClawChatView extends ItemView {
       }))
   }
 
-  /** Handle a prompt chosen from the slash-command dropdown (mouse click). */
-  private async choosePrompt(_item: SuggestItem): Promise<void> {
-    console.debug('[oco] choosePrompt called')
+  /**
+   * Replace the `/query` text in the input with `/prompt-name`,
+   * close the dropdown, and place cursor after the command.
+   * Expansion to the prompt body happens at submit time.
+   */
+  private selectPrompt(item: SuggestItem): void {
+    const slash = this.activeSlash
     this.closeSlashSuggest()
-    // Keep focus in the textarea so the user can hit Enter to send.
-    this.inputEl.focus()
+    if (!slash) return
+
+    const token = `/${item.path}`
+    const { value, caret } = replaceMention(
+      this.inputEl.value,
+      slash.start,
+      slash.query.length,
+      `${token} `
+    )
+    this.inputEl.value = value
+    this.inputEl.setSelectionRange(caret, caret)
+    this.autoResize()
+    this.updateSendButton()
   }
 
   /**
