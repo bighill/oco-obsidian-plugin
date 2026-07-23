@@ -538,13 +538,14 @@
   font-weight: 600;
 }
 .openclaw-msg-assistant code {
-  font-size: var(--code-size);
-  font-family: var(--font-monospace);
   color: var(--code-normal);
-  background: var(--background-secondary);
-  padding: 1px 5px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
+  font-family: var(--font-monospace);
+  background-color: var(--code-background);
+  border-radius: var(--code-radius);
+  font-size: var(--code-size);
+  padding: 0.15em 0.3em;
+  border: var(--code-border-width) solid var(--code-border-color);
+  -webkit-box-decoration-break: clone;
 }
 .openclaw-msg-assistant pre {
   margin: 6px 0;
