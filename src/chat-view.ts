@@ -29,7 +29,6 @@ import { ModelPickerModal } from './model-picker-modal'
 import {
   loadPrompts,
   detectSlashCommand,
-  insertPrompt,
   type SavedPrompt,
 } from './prompt-loader'
 import type OpenClawPlugin from './main'
@@ -841,6 +840,9 @@ export class OpenClawChatView extends ItemView {
       return
     }
 
+    // Expand slash-command prompts before sending
+    text = await this.expandSlashCommands(text)
+
     this.sending = true
     this.sendBtn.disabled = true
     this.inputEl.value = ''
@@ -1646,34 +1648,33 @@ export class OpenClawChatView extends ItemView {
   }
 
   /** Handle a prompt chosen from the slash-command dropdown. */
-  private async choosePrompt(item: SuggestItem): Promise<void> {
-    const slash = this.activeSlash
+  private async choosePrompt(_item: SuggestItem): Promise<void> {
     this.closeSlashSuggest()
-    if (!slash) return
-
-    const prompt = this.savedPrompts.find((p) => p.name === item.path)
-    if (!prompt) return
-
-    // Extract any args typed after the command name
-    const fullCmd = this.inputEl.value.slice(
-      slash.start,
-      this.inputEl.selectionStart ?? this.inputEl.value.length
-    )
-    // `/name args...` — split on first space after the command
-    const spaceIdx = fullCmd.indexOf(' ')
-    const args = spaceIdx >= 0 ? fullCmd.slice(spaceIdx + 1).trim() : ''
-
-    const { value, caret } = insertPrompt(
-      this.inputEl.value,
-      slash.start,
-      slash.query.length,
-      prompt.body,
-      args
-    )
-    this.inputEl.value = value
-    this.inputEl.setSelectionRange(caret, caret)
+    // Leave the `/name` text in the input — expansion happens at submit time.
+    // Place cursor right after the command so the user can type arguments.
+    const cursor = this.inputEl.selectionStart ?? this.inputEl.value.length
+    this.inputEl.setSelectionRange(cursor, cursor)
     this.autoResize()
     this.updateSendButton()
+  }
+
+  /**
+   * Expand any `/name` slash command in the text to its prompt body.
+   * `$@` in the body is replaced by args typed after the command name.
+   * Returns the expanded text, or the original if no command matched.
+   */
+  private async expandSlashCommands(text: string): Promise<string> {
+    const match = /^(\/[a-zA-Z0-9_-]+)(?:\s+(.*))?$/s.exec(text.trim())
+    if (!match) return text
+    const name = match[1].slice(1) // strip leading /
+    const args = (match[2] ?? '').trim()
+    const prompts = await loadPrompts(this.app.vault)
+    const prompt = prompts.find((p) => p.name === name)
+    if (!prompt) return text
+    if (prompt.body.includes('$@')) {
+      return prompt.body.replace('$@', args)
+    }
+    return args ? `${prompt.body} ${args}` : prompt.body
   }
 
   /** Rank vault files for the dropdown, using Obsidian fuzzy search when querying. */
