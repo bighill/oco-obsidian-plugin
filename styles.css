@@ -538,8 +538,10 @@
   font-weight: 600;
 }
 .openclaw-msg-assistant code {
-  font-size: 12px;
-  background: var(--background-primary);
+  font-size: var(--code-size);
+  font-family: var(--font-monospace);
+  color: var(--code-normal);
+  background: var(--code-background);
   padding: 1px 4px;
   border-radius: 3px;
 }
