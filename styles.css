@@ -415,7 +415,7 @@
 .openclaw-msg {
   padding: 7px 10px;
   border-radius: 12px;
-  font-size: 14px;
+  font-size: var(--font-text-size);
   line-height: 1.5;
   word-wrap: break-word;
   overflow-wrap: break-word;
