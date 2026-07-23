@@ -2138,7 +2138,7 @@ export class OpenClawChatView extends ItemView {
     if (!visibleText) return
     if (!this.streamEl) {
       this.streamEl = this.messagesEl.createDiv(
-        'openclaw-msg openclaw-msg-assistant openclaw-streaming'
+        'openclaw-msg openclaw-msg-assistant openclaw-streaming markdown-rendered'
       )
       this.scrollToBottom() // Scroll once when bubble first appears
     }
@@ -2164,7 +2164,7 @@ export class OpenClawChatView extends ItemView {
               // Render text bubble if there's visible text
               if (cleaned) {
                 const bubble = this.messagesEl.createDiv(
-                  'openclaw-msg openclaw-msg-assistant'
+                  'openclaw-msg openclaw-msg-assistant markdown-rendered'
                 )
                 try {
                   await MarkdownRenderer.render(
@@ -2195,7 +2195,7 @@ export class OpenClawChatView extends ItemView {
         }
       }
       const cls =
-        msg.role === 'user' ? 'openclaw-msg-user' : 'openclaw-msg-assistant'
+        msg.role === 'user' ? 'openclaw-msg-user' : 'openclaw-msg-assistant markdown-rendered'
       const bubble = this.messagesEl.createDiv(`openclaw-msg ${cls}`)
       // Render images
       if (msg.images && msg.images.length > 0) {
