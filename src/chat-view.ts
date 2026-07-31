@@ -2257,7 +2257,7 @@ export class OpenClawChatView extends ItemView {
       this.typingEl.removeClass('oc-hidden')
     }
 
-    this.scrollToBottom(true)
+    this.scrollToBottom()
   }
 
   private extractDeltaText(
@@ -2390,7 +2390,7 @@ export class OpenClawChatView extends ItemView {
         }
       }
     }
-    this.scrollToBottom(true)
+    this.scrollToBottom()
   }
 
   private renderUserText(bubble: HTMLElement, text: string): void {
@@ -2412,20 +2412,13 @@ export class OpenClawChatView extends ItemView {
     }
   }
 
-  private isNearBottom(threshold = 80): boolean {
-    if (!this.messagesEl) return true
-    const { scrollTop, scrollHeight, clientHeight } = this.messagesEl
-    return scrollHeight - scrollTop - clientHeight <= threshold
-  }
-
-  private scrollToBottom(force = false): void {
-    if (!this.messagesEl) return
-    // Don't yank the view if the user has scrolled up to read history
-    if (!force && !this.isNearBottom()) return
-    // Use requestAnimationFrame to ensure DOM has updated
-    window.requestAnimationFrame(() => {
-      this.messagesEl.scrollTop = this.messagesEl.scrollHeight
-    })
+  private scrollToBottom(): void {
+    if (this.messagesEl) {
+      // Use requestAnimationFrame to ensure DOM has updated
+      window.requestAnimationFrame(() => {
+        this.messagesEl.scrollTop = this.messagesEl.scrollHeight
+      })
+    }
   }
 
   private autoResize(): void {
