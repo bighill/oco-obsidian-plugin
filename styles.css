@@ -409,7 +409,6 @@
   gap: 2px;
   scroll-behavior: smooth;
   overscroll-behavior: contain;
-  overflow-anchor: none;
 }
 
 /* Message bubbles */

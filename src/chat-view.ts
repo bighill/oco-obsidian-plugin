@@ -2292,14 +2292,8 @@ export class OpenClawChatView extends ItemView {
       )
       this.scrollToBottom() // Scroll once when bubble first appears
     }
-    // Update text in place instead of empty+recreate to avoid layout shifts
-    // that trigger browser scroll-anchoring even without explicit scrollToBottom
-    let textEl = this.streamEl.querySelector('.openclaw-msg-text')
-    if (textEl) {
-      textEl.textContent = visibleText
-    } else {
-      this.streamEl.createDiv({ text: visibleText, cls: 'openclaw-msg-text' })
-    }
+    this.streamEl.empty()
+    this.streamEl.createDiv({ text: visibleText, cls: 'openclaw-msg-text' })
     // Don't auto-scroll during text streaming - let user read from the top
   }
 
