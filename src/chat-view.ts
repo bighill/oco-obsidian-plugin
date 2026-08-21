@@ -123,13 +123,11 @@ export class OpenClawChatView extends ItemView {
   private profileBtnEl: HTMLElement | null = null
   private profileDropdownEl: HTMLElement | null = null
   private typingEl!: HTMLElement
-  private attachPreviewEl!: HTMLElement
   private suggest!: InlineSuggest
   private activeMention: { query: string; start: number } | null = null
   private slashSuggest!: InlineSuggest
   private activeSlash: { query: string; start: number } | null = null
   private savedPrompts: SavedPrompt[] = []
-  private fileInputEl!: HTMLInputElement
   // `inline`/`token`: @-mention attachments shown as inline text (no chip). The
   // token is the exact `@path` string inserted; if it's gone from the textarea,
   // the attachment is reconciled away (see reconcileInlineMentions).
@@ -269,34 +267,10 @@ export class OpenClawChatView extends ItemView {
       void this.cycleBarControl('verboseLevel', ['', 'off', 'on', 'full'])
     })
     const inputRow = inputArea.createDiv('openclaw-input-row')
-    // Attach button + hidden file input
-    const attachBtn = inputRow.createEl('button', {
-      cls: 'openclaw-attach-btn',
-      attr: { 'aria-label': 'Attach file' },
-    })
-    setIcon(attachBtn, 'plus')
-    this.fileInputEl = inputArea.createEl('input', {
-      cls: 'openclaw-file-input',
-      attr: {
-        type: 'file',
-        accept:
-          'image/*,.md,.txt,.json,.csv,.pdf,.yaml,.yml,.js,.ts,.py,.html,.css',
-        multiple: 'true',
-      },
-    })
-    this.fileInputEl.addClass('oc-hidden')
-    this.fileInputEl.addEventListener(
-      'change',
-      () => void this.handleFileSelect()
-    )
-    attachBtn.addEventListener('click', () => this.fileInputEl.click())
     this.inputEl = inputRow.createEl('textarea', {
       cls: 'openclaw-input',
       attr: { placeholder: 'Message...', rows: '1' },
     })
-    // Attachment preview (hidden by default)
-    this.attachPreviewEl = inputArea.createDiv('openclaw-attach-preview')
-    this.attachPreviewEl.addClass('oc-hidden')
     // @-mention file picker dropdown (anchored to the input area)
     this.suggest = new InlineSuggest(inputArea)
     this.suggest.onChoose = (item) => void this.chooseMention(item)
@@ -419,19 +393,6 @@ export class OpenClawChatView extends ItemView {
       window.setTimeout(() => {
         this.inputEl.scrollIntoView({ block: 'end', behavior: 'smooth' })
       }, 300)
-    })
-    // Clipboard paste: capture images from clipboard
-    this.inputEl.addEventListener('paste', (e) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (const item of Array.from(items)) {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault()
-          const file = item.getAsFile()
-          if (file) void this.handlePastedFile(file)
-          return
-        }
-      }
     })
     this.sendBtn.addEventListener('click', () => {
       if (this.inputEl.value.trim() || this.pendingAttachments.length > 0) {
@@ -897,7 +858,6 @@ export class OpenClawChatView extends ItemView {
         if (!fullMessage) fullMessage = text
       }
       this.pendingAttachments = []
-      this.attachPreviewEl.addClass('oc-hidden')
     }
 
     // Store the full message (incl. file blocks) locally so the just-sent
@@ -1796,143 +1756,6 @@ export class OpenClawChatView extends ItemView {
     if (survivors.length !== this.pendingAttachments.length) {
       this.pendingAttachments = survivors
       this.updateSendButton()
-    }
-  }
-
-  async handleFileSelect(): Promise<void> {
-    const files = this.fileInputEl.files
-    if (!files || files.length === 0) return
-
-    for (const file of Array.from(files)) {
-      try {
-        const kind = classifyFile({ name: file.name, mimeType: file.type })
-
-        if (kind === 'image') {
-          const resized = await this.resizeImage(file, 2048, 0.85)
-          this.pendingAttachments.push({
-            name: file.name,
-            content: `[Attached image: ${file.name}]`,
-            base64: resized.base64,
-            mimeType: resized.mimeType,
-          })
-        } else if (kind === 'text') {
-          const content = await file.text()
-          this.pendingAttachments.push({
-            name: file.name,
-            content: formatTextAttachment(file.name, content),
-          })
-        } else {
-          this.pendingAttachments.push({
-            name: file.name,
-            content: `[Attached file: ${file.name} (${file.type || 'unknown type'}, ${Math.round(file.size / 1024)}KB)]`,
-          })
-        }
-      } catch (e) {
-        new Notice(`Failed to attach ${file.name}: ${e}`)
-      }
-    }
-
-    // Update preview
-    this.renderAttachPreview()
-    this.fileInputEl.value = ''
-  }
-
-  async handlePastedFile(file: File): Promise<void> {
-    try {
-      const ext = file.type.split('/')[1] || 'png'
-      const resized = await this.resizeImage(file, 2048, 0.85)
-      this.pendingAttachments.push({
-        name: `clipboard.${ext}`,
-        content: `[Attached image: clipboard.${ext}]`,
-        base64: resized.base64,
-        mimeType: resized.mimeType,
-      })
-      this.renderAttachPreview()
-    } catch (e) {
-      new Notice(`Failed to paste image: ${e}`)
-    }
-  }
-
-  private async resizeImage(
-    file: File,
-    maxSide: number,
-    quality: number
-  ): Promise<{ base64: string; mimeType: string }> {
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      const url = URL.createObjectURL(file)
-      img.onload = () => {
-        URL.revokeObjectURL(url)
-        let { width, height } = img
-        if (width > maxSide || height > maxSide) {
-          const scale = maxSide / Math.max(width, height)
-          width = Math.round(width * scale)
-          height = Math.round(height * scale)
-        }
-        const canvas = createEl('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          reject(new Error('No canvas context'))
-          return
-        }
-        ctx.drawImage(img, 0, 0, width, height)
-        const dataUrl = canvas.toDataURL('image/jpeg', quality)
-        const base64 = dataUrl.split(',')[1]
-        resolve({ base64, mimeType: 'image/jpeg' })
-      }
-      img.onerror = () => {
-        URL.revokeObjectURL(url)
-        reject(new Error('Failed to load image'))
-      }
-      img.src = url
-    })
-  }
-
-  private renderAttachPreview(): void {
-    this.attachPreviewEl.empty()
-    // Inline @-mentions live in the textarea, not the chip strip.
-    const chipped = this.pendingAttachments.filter((a) => !a.inline)
-    if (chipped.length === 0) {
-      this.attachPreviewEl.addClass('oc-hidden')
-      return
-    }
-    this.attachPreviewEl.removeClass('oc-hidden')
-
-    for (let i = 0; i < chipped.length; i++) {
-      const att = chipped[i]
-      const chip = this.attachPreviewEl.createDiv('openclaw-attach-chip')
-
-      // Show thumbnail for images
-      if (att.base64 && att.mimeType) {
-        const src = `data:${att.mimeType};base64,${att.base64}`
-        chip.createEl('img', { cls: 'openclaw-attach-thumb', attr: { src } })
-      } else if (att.vaultPath) {
-        try {
-          const src = this.app.vault.adapter.getResourcePath(att.vaultPath)
-          if (src)
-            chip.createEl('img', {
-              cls: 'openclaw-attach-thumb',
-              attr: { src },
-            })
-        } catch {
-          /* ignore */
-        }
-      }
-
-      chip.createSpan({ text: att.name, cls: 'openclaw-attach-name' })
-      const removeBtn = chip.createEl('button', {
-        text: '✕',
-        cls: 'openclaw-attach-remove',
-      })
-      removeBtn.addEventListener('click', () => {
-        // Splice the actual object - `chipped` is a filtered view, so its index
-        // doesn't line up with the backing array.
-        const at = this.pendingAttachments.indexOf(att)
-        if (at >= 0) this.pendingAttachments.splice(at, 1)
-        this.renderAttachPreview()
-      })
     }
   }
 

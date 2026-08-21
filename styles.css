@@ -872,37 +872,6 @@
   background: var(--background-modifier-active-hover);
 }
 
-.openclaw-attach-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  padding: 0;
-  transition: color 0.15s;
-}
-
-.openclaw-attach-btn:hover {
-  color: var(--text-normal);
-}
-
-/* Attachment preview */
-.openclaw-attach-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 2px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
 /* @-mention file picker dropdown — floats above the input area */
 .openclaw-suggest {
   position: absolute;
@@ -969,46 +938,6 @@
   padding: 8px 10px;
   color: var(--text-muted);
   font-size: 12px;
-}
-
-.openclaw-attach-chip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--background-secondary);
-  border-radius: 8px;
-  padding: 4px 8px 4px 4px;
-  max-width: 200px;
-}
-
-.openclaw-attach-thumb {
-  width: 40px;
-  height: 40px;
-  border-radius: 6px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.openclaw-attach-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-}
-
-.openclaw-attach-remove {
-  background: none;
-  border: none;
-  color: var(--text-faint);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 0 2px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.openclaw-attach-remove:hover {
-  color: var(--text-normal);
 }
 
 /* Message images */
