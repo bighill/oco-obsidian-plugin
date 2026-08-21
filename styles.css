@@ -530,13 +530,7 @@
 .openclaw-msg-assistant li {
   margin-bottom: 2px;
 }
-.openclaw-msg-assistant h1,
-.openclaw-msg-assistant h2,
-.openclaw-msg-assistant h3 {
-  margin: 6px 0 3px;
-  font-size: 14px;
-  font-weight: 600;
-}
+/* Headings: let the theme handle sizing and weight */
 /* Inline code: handled by Obsidian's MarkdownRenderer — no override needed */
 .openclaw-msg-assistant pre {
   margin: 6px 0;
