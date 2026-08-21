@@ -448,6 +448,16 @@ export class OpenClawChatView extends ItemView {
     // Init touch gestures for mobile
     this.initTouchGestures()
 
+    // Focus input on open and whenever the tab becomes active
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', (leaf) => {
+        if (leaf === this.leaf) {
+          this.inputEl.focus()
+        }
+      })
+    )
+    this.inputEl.focus()
+
     if (this.plugin.gatewayConnected) {
       await this.loadHistory()
       void this.loadAgents()
