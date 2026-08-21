@@ -831,7 +831,7 @@
   font-family: inherit;
 }
 .openclaw-brain-btn:hover {
-  background: var(--background-modifier-active-hover);
+  background: transparent;
 }
 .openclaw-brain-btn .svg-icon { display: none; }
 .openclaw-brain-btn-arrow {
