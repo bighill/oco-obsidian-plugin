@@ -85,7 +85,7 @@ export default class OpenClawPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new OpenClawChatView(leaf, this))
 
     // Ribbon icon
-    this.addRibbonIcon('message-square', 'OcO chat', () => {
+    this.addRibbonIcon('bot', 'OcO chat', () => {
       void this.openChatInNewTab()
     })
 
