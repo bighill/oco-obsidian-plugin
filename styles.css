@@ -714,7 +714,7 @@
   border-radius: 6px;
   background: var(--background-primary);
   color: var(--text-normal);
-  font-size: 14px;
+  font-size: var(--font-text-size);
   line-height: 1.4;
   padding: 6px 8px;
   resize: none;
