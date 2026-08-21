@@ -739,6 +739,10 @@
   border-color: var(--background-modifier-border);
 }
 
+.openclaw-input:hover {
+  background: var(--background-primary) !important;
+}
+
 /* Send button: circular, accent */
 .openclaw-reconnect-btn {
   background: none;
