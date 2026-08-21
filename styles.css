@@ -660,7 +660,7 @@
   outline: none;
   min-height: 22px;
   max-height: 120px;
-  font-family: inherit;
+  font-family: var(--font-text);
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
