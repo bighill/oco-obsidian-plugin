@@ -710,12 +710,13 @@
   flex: 1;
   min-width: 0;
   width: 0;
-  border: none;
-  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
   color: var(--text-normal);
   font-size: 14px;
   line-height: 1.4;
-  padding: 6px 4px 6px 4px;
+  padding: 6px 8px;
   resize: none;
   outline: none;
   min-height: 22px;
@@ -735,7 +736,7 @@
 .openclaw-input:focus {
   outline: none;
   box-shadow: none !important;
-  background: transparent !important;
+  border-color: var(--background-modifier-border);
 }
 
 /* Send button: circular, accent */
