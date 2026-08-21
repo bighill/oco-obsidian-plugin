@@ -700,12 +700,7 @@
   display: flex;
   align-items: flex-end;
   gap: 4px;
-  background: color-mix(in srgb, var(--background-secondary) 70%, transparent);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-radius: 22px;
   padding: 4px 4px 4px 10px;
-  border: 1px solid var(--background-modifier-border);
   min-height: 40px;
   overflow: hidden;
   margin-bottom: 2px;
@@ -737,6 +732,12 @@
   color: var(--text-faint);
 }
 
+.openclaw-input:focus {
+  outline: none;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
 /* Send button: circular, accent */
 .openclaw-reconnect-btn {
   background: none;
@@ -758,49 +759,54 @@
 .openclaw-send-btn {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
   border: none;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  border-radius: 4px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: opacity 0.15s, transform 0.1s;
   padding: 0;
 }
 
-.openclaw-send-btn:hover {
-  opacity: 0.85;
-  transform: scale(1.05);
+.openclaw-send-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.openclaw-send-btn:hover:not(:disabled) {
+  color: var(--interactive-accent);
+  background: transparent !important;
 }
 
 .openclaw-send-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-  transform: none;
 }
 
-/* Abort button: red circle */
+/* Abort button */
 .openclaw-abort-btn {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
   border: none;
-  background: var(--color-red);
-  color: white;
+  border-radius: 4px;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: opacity 0.15s;
   padding: 0;
 }
 
 .openclaw-abort-btn:hover {
-  opacity: 0.85;
+  color: var(--color-red);
+  background: transparent !important;
 }
 
 /* Attach button */
